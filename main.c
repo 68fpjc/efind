@@ -15,6 +15,7 @@
 
 #define VERSION "0.1.0"
 #define MAX_PATH 1024
+#define MAX_CONDITIONS 100  // 条件の最大数を定義
 
 typedef enum { OP_NONE, OP_AND, OP_OR } Operator;
 
@@ -29,7 +30,7 @@ typedef struct {
 typedef struct {
   int maxdepth;
   int condition_count;
-  Condition conditions[100];  // 単純化のため固定サイズ
+  Condition conditions[MAX_CONDITIONS];  // 定数を使用
 } Options;
 
 void print_help() {
@@ -370,6 +371,13 @@ int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
       }
     } else if (strcmp(argv[i], "-type") == 0) {
       if (i + 1 < argc) {
+        // 条件数のチェックを追加
+        if (opts->condition_count >= MAX_CONDITIONS) {
+          fprintf(stderr, "Error: Too many conditions (maximum is %d)\n",
+                  MAX_CONDITIONS);
+          return 0;
+        }
+
         Condition *cond = &opts->conditions[opts->condition_count++];
         cond->pattern = NULL;
         cond->op = OP_AND;
@@ -393,6 +401,13 @@ int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
     } else if (strcmp(argv[i], "-name") == 0 ||
                strcmp(argv[i], "-iname") == 0) {
       if (i + 1 < argc) {
+        // 条件数のチェックを追加
+        if (opts->condition_count >= MAX_CONDITIONS) {
+          fprintf(stderr, "Error: Too many conditions (maximum is %d)\n",
+                  MAX_CONDITIONS);
+          return 0;
+        }
+
         Condition *cond = &opts->conditions[opts->condition_count++];
         cond->pattern = argv[++i];
         cond->type = TYPE_NONE;
