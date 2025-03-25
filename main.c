@@ -225,11 +225,22 @@ void join_paths(char *dest, size_t dest_size, const char *dir,
   }
 }
 
+/**
+ * ディレクトリエントリを保持する構造体
+ */
+typedef struct {
+  char name[256];  // ファイル名（最大長を確保）
+  int is_dir;      // ディレクトリかどうかのフラグ
+} DirEntry;
+
 void search_directory(const char *base_dir, int current_depth, Options *opts) {
   DIR *dir;
   struct dirent *entry;
   char path[MAX_PATH];
   struct stat statbuf;
+  DirEntry *entries = NULL;
+  int entry_count = 0;
+  int entry_capacity = 0;
 
   // 開始ディレクトリ（current_depth == 0）のときの特別処理
   if (current_depth == 0) {
@@ -254,35 +265,85 @@ void search_directory(const char *base_dir, int current_depth, Options *opts) {
     return;
   }
 
+  // ディレクトリを開いてエントリを収集
   if ((dir = opendir(base_dir)) == NULL) {
     fprintf(stderr, "Cannot open directory '%s': %s\n", base_dir,
             strerror(errno));
     return;
   }
 
+  // 収集するエントリ用の初期メモリを確保
+  entry_capacity = 32;  // 初期容量
+  entries = (DirEntry *)malloc(sizeof(DirEntry) * entry_capacity);
+  if (entries == NULL) {
+    fprintf(stderr, "Memory allocation error\n");
+    closedir(dir);
+    return;
+  }
+
+  // ディレクトリエントリを読み込む（"."と".."を除く）
   while ((entry = readdir(dir)) != NULL) {
     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
       continue;
     }
 
-    // 新しいパス結合関数を使用
+    // エントリリストの拡張が必要な場合
+    if (entry_count >= entry_capacity) {
+      entry_capacity *= 2;
+      DirEntry *new_entries =
+          (DirEntry *)realloc(entries, sizeof(DirEntry) * entry_capacity);
+      if (new_entries == NULL) {
+        fprintf(stderr, "Memory allocation error during expansion\n");
+        break;
+      }
+      entries = new_entries;
+    }
+
+    // エントリ名をコピー
+    strncpy(entries[entry_count].name, entry->d_name,
+            sizeof(entries[entry_count].name) - 1);
+    entries[entry_count].name[sizeof(entries[entry_count].name) - 1] = '\0';
+
+    // パスを結合
     join_paths(path, sizeof(path), base_dir, entry->d_name);
 
+    // ディレクトリかどうか確認
+    if (stat(path, &statbuf) != -1 && S_ISDIR(statbuf.st_mode)) {
+      entries[entry_count].is_dir = 1;
+    } else {
+      entries[entry_count].is_dir = 0;
+    }
+
+    entry_count++;
+  }
+
+  // ディレクトリハンドルはもう必要ないので閉じる
+  closedir(dir);
+
+  // 収集したエントリを処理
+  for (int i = 0; i < entry_count; i++) {
+    // パスを結合
+    join_paths(path, sizeof(path), base_dir, entries[i].name);
+
+    // ファイルの情報を取得
     if (stat(path, &statbuf) == -1) {
       fprintf(stderr, "Cannot stat '%s': %s\n", path, strerror(errno));
       continue;
     }
 
+    // 条件を評価して、マッチすれば出力
     if (evaluate_conditions(path, &statbuf, opts)) {
       printf("%s\n", path);
     }
 
-    if (S_ISDIR(statbuf.st_mode)) {
+    // ディレクトリなら再帰的に処理
+    if (entries[i].is_dir) {
       search_directory(path, current_depth + 1, opts);
     }
   }
 
-  closedir(dir);
+  // メモリを解放
+  free(entries);
 }
 
 int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
