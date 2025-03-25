@@ -18,7 +18,7 @@
 
 typedef enum { OP_NONE, OP_AND, OP_OR } Operator;
 
-typedef enum { TYPE_NONE, TYPE_FILE, TYPE_DIR, TYPE_LINK } FileType;
+typedef enum { TYPE_NONE, TYPE_FILE, TYPE_DIR } FileType;
 
 typedef struct {
   char *pattern;
@@ -37,8 +37,7 @@ void print_help() {
   printf("Options:\n");
   printf("  -maxdepth LEVELS   Maximum directory depth to search\n");
   printf(
-      "  -type TYPE         File type to search for (f: file, d: directory, l: "
-      "symbolic link)\n");
+      "  -type TYPE         File type to search for (f: file, d: directory)\n");
   printf(
       "  -name PATTERN      Search for files matching PATTERN (case "
       "insensitive)\n");
@@ -140,8 +139,6 @@ int evaluate_conditions(const char *path, struct stat *st, Options *opts) {
       if (cond->type == TYPE_FILE && !S_ISREG(st->st_mode)) {
         match = 0;
       } else if (cond->type == TYPE_DIR && !S_ISDIR(st->st_mode)) {
-        match = 0;
-      } else if (cond->type == TYPE_LINK && !S_ISLNK(st->st_mode)) {
         match = 0;
       }
     }
@@ -384,9 +381,6 @@ int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
             break;
           case 'd':
             cond->type = TYPE_DIR;
-            break;
-          case 'l':
-            cond->type = TYPE_LINK;
             break;
           default:
             fprintf(stderr, "Error: invalid type '%c'\n", type);
