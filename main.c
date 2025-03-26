@@ -1,57 +1,95 @@
-/*
- * efind - simple implementation of GNU find subset
- * Supports: -maxdepth, -type, -name, -iname, -o, --help, -help, --version,
- * -version
- */
-
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define VERSION "0.1.0"
-#define MAX_PATH 1024
-#define MAX_CONDITIONS 100  // 条件の最大数を定義
+#define MAX_PATH 1024       // パスの最大長
+#define MAX_CONDITIONS 100  // 条件の最大数
 
-typedef enum { OP_NONE, OP_AND, OP_OR } Operator;
+/**
+ * @brief 論理演算子を表す列挙型
+ *
+ * @enum Operator
+ */
+typedef enum {
+  OP_NONE,  // 論理演算子が指定されていない状態
+  OP_AND,   // 論理積 (AND) を表す
+  OP_OR     // 論理和 (OR) を表す
+} Operator;
 
-typedef enum { TYPE_NONE, TYPE_FILE, TYPE_DIR } FileType;
+/**
+ * @brief ファイルの種類を表す列挙型
+ *
+ * @enum FileType
+ */
+typedef enum {
+  TYPE_NONE,  // ファイルタイプが指定されていない状態
+  TYPE_FILE,  // 通常のファイル
+  TYPE_DIR    // ディレクトリ
+} FileType;
 
+/**
+ * @brief 検索条件を表す構造体
+ *
+ * @struct Condition
+ */
 typedef struct {
-  char *pattern;
-  FileType type;
-  Operator op;
+  char *pattern;  // 検索に使用するパターン文字列
+  FileType type;  // ファイルの種類を指定するためのフィールド
+  Operator op;    // 条件を組み合わせるための演算子
 } Condition;
 
+/**
+ * @brief 検索オプションを表す構造体
+ *
+ * @struct Options
+ */
 typedef struct {
-  int maxdepth;
-  int condition_count;
-  Condition conditions[MAX_CONDITIONS];  // 定数を使用
+  int maxdepth;                          // 最大の検索深さ
+  int condition_count;                   // 条件の数
+  Condition conditions[MAX_CONDITIONS];  // 検索条件
 } Options;
 
-void print_help() {
-  printf("Usage: efind [starting-point...] [expression]\n\n");
-  printf("Options:\n");
-  printf("  -maxdepth LEVELS   Maximum directory depth to search\n");
+/**
+ * @brief ヘルプメッセージを出力する関数
+ */
+static void print_help(void) {
   printf(
-      "  -type TYPE         File type to search for (f: file, d: directory)\n");
-  printf(
+      "Usage: efind [starting-point...] [expression]\n\n"
+      "Options:\n"
+      "  -maxdepth LEVELS   Maximum directory depth to search\n"
+      "  -type TYPE         File type to search for (f: file, d: directory)\n"
       "  -name PATTERN      Search for files matching PATTERN (case "
-      "insensitive)\n");
-  printf("  -iname PATTERN     Same as -name, case insensitive\n");
-  printf("  -o                 OR operator to combine conditions\n");
-  printf("  --help, -help      Display this help message\n");
-  printf("  --version, -version Display version information\n");
+      "insensitive)\n"
+      "  -iname PATTERN     Same as -name, case insensitive\n"
+      "  -o                 OR operator to combine conditions\n"
+      "  --help, -help      Display this help message\n"
+      "  --version, -version Display version information\n");
 }
 
-void print_version() { printf("efind version %s\n", VERSION); }
+/**
+ * @brief バージョン情報を出力する関数
+ */
+static void print_version(void) {
+  printf("efind version " VERSION " https://github.com/68fpjc/efind\n");
+}
 
-// 独自のパターンマッチング関数
-int match_pattern(const char *pattern, const char *string) {
+/**
+ * @brief 大文字小文字を無視したパターンマッチングを行う関数
+ *
+ * 指定されたパターンと文字列を比較し、大文字小文字の違いを無視して一致するかどうかを判定する
+ *
+ * @param[in] pattern 比較対象のパターン (ヌル終端文字列)
+ * @param[in] string チェック対象の文字列 (ヌル終端文字列)
+ * @return 一致する場合は非ゼロ値、一致しない場合はゼロを返す
+ */
+static int match_pattern_case_insensitive(const char *pattern,
+                                          const char *string) {
   const char *p = pattern;
   const char *s = string;
   const char *p_backup = NULL;
@@ -59,51 +97,15 @@ int match_pattern(const char *pattern, const char *string) {
 
   while (*s) {
     if (*p == '*') {
-      // '*'の場合、パターンを1つ進めて、現在位置をバックアップ
+      // '*' の場合、パターンを 1 つ進めて、現在位置をバックアップ
       p_backup = ++p;
       s_backup = s;
 
-      // '*'が最後のパターンなら、常にマッチ
-      if (*p == '\0') return 1;
-    } else if (*p == '?' || *p == *s) {
-      // '?'か文字が一致する場合は次の文字へ
-      p++;
-      s++;
-    } else if (p_backup) {
-      // 不一致でバックアップがある場合は、バックアップ位置から再開
-      p = p_backup;
-      s = ++s_backup;
-    } else {
-      // 不一致でバックアップがない場合はマッチしない
-      return 0;
-    }
-  }
-
-  // 残りのパターンが全て'*'なら成功
-  while (*p == '*') p++;
-
-  // パターンの終わりまで来たらマッチ
-  return *p == '\0';
-}
-
-// 大文字小文字を無視したパターンマッチング関数
-int match_pattern_case_insensitive(const char *pattern, const char *string) {
-  const char *p = pattern;
-  const char *s = string;
-  const char *p_backup = NULL;
-  const char *s_backup = NULL;
-
-  while (*s) {
-    if (*p == '*') {
-      // '*'の場合、パターンを1つ進めて、現在位置をバックアップ
-      p_backup = ++p;
-      s_backup = s;
-
-      // '*'が最後のパターンなら、常にマッチ
+      // '*' が最後のパターンなら、常にマッチ
       if (*p == '\0') return 1;
     } else if (*p == '?' ||
                tolower((unsigned char)*p) == tolower((unsigned char)*s)) {
-      // '?'か文字が一致する場合は次の文字へ (大文字小文字を区別しない)
+      // '?' か文字が一致する場合は次の文字へ (大文字小文字を区別しない)
       p++;
       s++;
     } else if (p_backup) {
@@ -116,26 +118,39 @@ int match_pattern_case_insensitive(const char *pattern, const char *string) {
     }
   }
 
-  // 残りのパターンが全て'*'なら成功
+  // 残りのパターンが全て '*' なら成功
   while (*p == '*') p++;
 
   // パターンの終わりまで来たらマッチ
   return *p == '\0';
 }
 
-int evaluate_conditions(const char *path, struct stat *st, Options *opts) {
+/**
+ * @brief 指定された条件を評価する関数
+ *
+ * ファイルパスとそのメタデータに基づいて、指定された条件を評価し、条件を満たすかどうかを判定する
+ *
+ * @param[in] path 評価対象のファイルパス
+ * @param[in] st ファイルに関するメタデータを含む struct stat へのポインタ
+ * @param[in] opts 評価基準を含む Options 構造体へのポインタ
+ * @return 条件を満たす場合は 1 を返し、満たさない場合は 0 を返す
+ */
+static int evaluate_conditions(const char *path, struct stat *st,
+                               Options *opts) {
+  // 条件が指定されていない場合はすべて一致とみなす
   if (opts->condition_count == 0) {
-    return 1;  // No conditions means match everything
+    return 1;  // 条件がない場合はすべて一致
   }
 
   int result = 0;
   Operator current_op = OP_AND;
 
+  // 各条件を順に評価
   for (int i = 0; i < opts->condition_count; i++) {
     int match = 1;
-    Condition *cond = &opts->conditions[i];
+    const Condition *cond = &opts->conditions[i];
 
-    // Check file type
+    // ファイルタイプのチェック
     if (cond->type != TYPE_NONE) {
       if (cond->type == TYPE_FILE && !S_ISREG(st->st_mode)) {
         match = 0;
@@ -144,7 +159,7 @@ int evaluate_conditions(const char *path, struct stat *st, Options *opts) {
       }
     }
 
-    // Check name pattern with custom pattern matching
+    // 名前パターンのチェック
     if (cond->pattern != NULL) {
       const char *basename = strrchr(path, '/');
       basename = basename ? basename + 1 : path;
@@ -153,7 +168,7 @@ int evaluate_conditions(const char *path, struct stat *st, Options *opts) {
       }
     }
 
-    // Apply operator logic
+    // 演算子ロジックを適用
     if (i == 0) {
       result = match;
     } else if (current_op == OP_AND) {
@@ -162,7 +177,7 @@ int evaluate_conditions(const char *path, struct stat *st, Options *opts) {
       result = result || match;
     }
 
-    // Set operator for next condition
+    // 次の条件のために演算子を設定
     current_op = cond->op;
   }
 
@@ -170,17 +185,27 @@ int evaluate_conditions(const char *path, struct stat *st, Options *opts) {
 }
 
 /**
- * パスがルートディレクトリかどうかを判定する関数
- * Human68kでは n:\ のようなドライブ指定のルートや / や \ も対象
+ * @brief パスがルートディレクトリかどうかを判定する関数
+ *
+ * 指定されたパスがルートディレクトリであるかを判定する
+ *
+ * Human68k 環境では以下のようなパスがルートディレクトリとみなされる :
+ *
+ *   - ドライブ指定のルート (例: n:\)
+ *
+ *   - スラッシュやバックスラッシュのみのパス (例: / または \)
+ *
+ * @param[in] path 判定対象のパス文字列
+ * @return int ルートディレクトリの場合は非ゼロ値、それ以外の場合は 0 を返す
  */
-int is_root_directory(const char *path) {
-  // ケース1: "X:\" または "X:/" 形式（ドライブレター+ルート）
+static int is_root_directory(const char *path) {
+  // ケース1: "X:\" または "X:/" 形式 (ドライブレター+ルート)
   if (strlen(path) == 3 && isalpha((unsigned char)path[0]) && path[1] == ':' &&
       (path[2] == '\\' || path[2] == '/')) {
     return 1;
   }
 
-  // ケース2: "/" または "\" 形式（ルートディレクトリ）
+  // ケース2: "/" または "\" 形式 (ルートディレクトリ)
   if (strcmp(path, "/") == 0 || strcmp(path, "\\") == 0) {
     return 1;
   }
@@ -189,11 +214,38 @@ int is_root_directory(const char *path) {
 }
 
 /**
- * 2つのパスを連結する関数
- * スラッシュの重複を防止し、Human68k のパス形式を考慮
+ * @brief 安全な snprintf 関数のラッパー
+ *
+ * バッファが不足する場合でも必ず NULL 終端する
+ *
+ * @param[out] dest 出力先バッファ
+ * @param[in] dest_size 出力先バッファのサイズ
+ * @param[in] format 書式指定文字列
  */
-void join_paths(char *dest, size_t dest_size, const char *dir,
-                const char *file) {
+static void safe_snprintf(char *dest, size_t dest_size, const char *format,
+                          ...) {
+  va_list args;
+  va_start(args, format);
+  int result = vsnprintf(dest, dest_size, format, args);
+  va_end(args);
+
+  if (result >= (int)dest_size && dest_size > 0) {
+    dest[dest_size - 1] = '\0';  // 切り詰めが発生した場合でも終端を保証
+  }
+}
+
+/**
+ * @brief 2つのパスを連結する関数
+ *
+ * スラッシュの重複を防止し、Human68k のパス形式を考慮する
+ *
+ * @param[out] dest      結合結果を格納するバッファ
+ * @param[in]  dest_size バッファのサイズ
+ * @param[in]  dir       ディレクトリパス
+ * @param[in]  file      ファイル名またはサブディレクトリ名
+ */
+static void join_paths(char *dest, size_t dest_size, const char *dir,
+                       const char *file) {
   // ベースディレクトリが空か終端がスラッシュかバックスラッシュ
   const size_t dir_len = strlen(dir);
   if (dir_len == 0) {
@@ -204,12 +256,12 @@ void join_paths(char *dest, size_t dest_size, const char *dir,
 
   // ルートディレクトリの場合は特別処理
   if (is_root_directory(dir)) {
-    // ドライブ指定のルートの場合（例: "n:\"）
+    // ドライブ指定のルートの場合 (例: "n:\")
     if (dir_len == 3 && isalpha((unsigned char)dir[0]) && dir[1] == ':') {
-      snprintf(dest, dest_size, "%c:%c%s", dir[0], dir[2], file);
+      safe_snprintf(dest, dest_size, "%c:%c%s", dir[0], dir[2], file);
     } else {
-      // UNIXスタイルのルート
-      snprintf(dest, dest_size, "/%s", file);
+      // UNIX スタイルのルート
+      safe_snprintf(dest, dest_size, "/%s", file);
     }
     return;
   }
@@ -217,21 +269,30 @@ void join_paths(char *dest, size_t dest_size, const char *dir,
   // 通常のディレクトリの場合
   char last_char = dir[dir_len - 1];
   if (last_char == '/' || last_char == '\\') {
-    snprintf(dest, dest_size, "%s%s", dir, file);
+    safe_snprintf(dest, dest_size, "%s%s", dir, file);
   } else {
-    snprintf(dest, dest_size, "%s/%s", dir, file);
+    safe_snprintf(dest, dest_size, "%s/%s", dir, file);
   }
 }
 
 /**
- * ディレクトリエントリを保持する構造体
+ * @brief ディレクトリエントリを保持する構造体
+ *
+ * ディレクトリ内のエントリ情報を格納するために使用するフィールドにはエントリ名や属性などが含まれる
  */
 typedef struct {
-  char name[256];  // ファイル名（最大長を確保）
+  char name[256];  // ファイル名 (最大長を確保)
   int is_dir;      // ディレクトリかどうかのフラグ
 } DirEntry;
 
-void search_directory(const char *base_dir, int current_depth, Options *opts) {
+/**
+ * @brief 指定された値が偶数かどうかを判定する関数
+ *
+ * @param[in] value 判定対象の整数値
+ * @return 偶数の場合は 1 、そうでない場合は 0
+ */
+static void search_directory(const char *base_dir, int current_depth,
+                             Options *opts) {
   DIR *dir;
   struct dirent *entry;
   char path[MAX_PATH];
@@ -240,7 +301,7 @@ void search_directory(const char *base_dir, int current_depth, Options *opts) {
   int entry_count = 0;
   int entry_capacity = 0;
 
-  // 開始ディレクトリ（current_depth == 0）のときの特別処理
+  // 開始ディレクトリ (current_depth == 0) のときの特別処理
   if (current_depth == 0) {
     int should_print_base_dir = 0;
 
@@ -254,7 +315,7 @@ void search_directory(const char *base_dir, int current_depth, Options *opts) {
 
     // 条件を満たしていて、ルートディレクトリでなければ出力
     if (should_print_base_dir && !is_root_directory(base_dir)) {
-      // ここでは深い検査せず、単に出力する（簡易実装）
+      // ここでは深い検査せず、単に出力する (簡易実装)
       printf("%s\n", base_dir);
     }
   }
@@ -279,7 +340,7 @@ void search_directory(const char *base_dir, int current_depth, Options *opts) {
     return;
   }
 
-  // ディレクトリエントリを読み込む（"."と".."を除く）
+  // ディレクトリエントリを読み込む ("." と ".." を除く)
   while ((entry = readdir(dir)) != NULL) {
     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
       continue;
@@ -297,10 +358,9 @@ void search_directory(const char *base_dir, int current_depth, Options *opts) {
       entries = new_entries;
     }
 
-    // エントリ名をコピー
-    strncpy(entries[entry_count].name, entry->d_name,
-            sizeof(entries[entry_count].name) - 1);
-    entries[entry_count].name[sizeof(entries[entry_count].name) - 1] = '\0';
+    // エントリ名をコピー (snprintf を安全な関数に置き換え)
+    safe_snprintf(entries[entry_count].name, sizeof(entries[entry_count].name),
+                  "%s", entry->d_name);
 
     // パスを結合
     join_paths(path, sizeof(path), base_dir, entry->d_name);
@@ -344,15 +404,25 @@ void search_directory(const char *base_dir, int current_depth, Options *opts) {
   free(entries);
 }
 
-int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
+/**
+ * @brief コマンドライン引数を解析する関数
+ *
+ * @param[in] argc コマンドライン引数の数
+ * @param[in] argv コマンドライン引数の配列
+ * @param[out] opts 解析結果を格納するためのオプション構造体へのポインタ
+ * @param[out] start_dir 開始ディレクトリを格納するためのポインタ
+ * @return 成功時は 0 、エラー時は負の値を返す
+ */
+static int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
   if (argc < 2) {
     print_help();
     return 0;
   }
 
-  opts->maxdepth = -1;  // No limit by default
-  opts->condition_count = 0;
-  *start_dir = ".";  // Default start directory
+  opts->maxdepth =
+      -1;  // 最大深さのデフォルト値を設定 (-1 は制限なしを意味する)
+  opts->condition_count = 0;  // 条件の数を初期化
+  *start_dir = ".";           // 開始ディレクトリのデフォルト値を設定
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-help") == 0) {
@@ -424,14 +494,20 @@ int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
         return 0;
       }
     } else if (argv[i][0] != '-') {
-      // Assume this is the start directory
-      *start_dir = argv[i];
+      *start_dir = argv[i];  // 開始ディレクトリと仮定する
     }
   }
 
   return 1;
 }
 
+/**
+ * @brief プログラムのエントリーポイント
+ *
+ * @param[in] argc コマンドライン引数の個数
+ * @param[in] argv コマンドライン引数の配列
+ * @return int プログラムの終了ステータス
+ */
 int main(int argc, char *argv[]) {
   Options opts;
   char *start_dir;
