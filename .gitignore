@@ -3,5 +3,4 @@
 *.o
 *.elf*
 *.d
-README.txt
-*.zip
+dist/
