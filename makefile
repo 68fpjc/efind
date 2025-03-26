@@ -1,6 +1,8 @@
+PROGRAM = efind
 VERSION = 0.1.0
 
-TARGET = efind.x
+TARGET = $(PROGRAM).x
+ARCHIVE = $(PROGRAM)-$(VERSION).zip
 
 CROSS = m68k-xelf-
 CC = $(CROSS)gcc
@@ -13,14 +15,22 @@ LDFLAGS =
 OBJS = main.o
 LDLIBS =
 
-.PHONY: all clean
+.PHONY: all arc clean
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
+README.txt: README.md
+	pandoc -f markdown -t plain $< >$@
+
+arc: $(ARCHIVE)
+
+$(ARCHIVE): $(TARGET) README.txt
+	7z a $(PROGRAM)-$(VERSION).zip $^
+
 DEPS = $(patsubst %.o,%.d,$(OBJS))
 
 clean:
-	-rm -f *.x *.o *.elf* *.d
+	-rm -f *.x *.o *.elf* *.d README.txt *.zip
