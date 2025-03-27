@@ -1,6 +1,8 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <mbctype.h>
+#include <mbstring.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,9 +82,10 @@ static void print_version(void) {
 }
 
 /**
- * @brief 大文字小文字を無視したパターンマッチングを行う関数
+ * @brief 大文字小文字を無視したマルチバイト対応パターンマッチングを行う関数
  *
  * 指定されたパターンと文字列を比較し、大文字小文字の違いを無視して一致するかどうかを判定する
+ * マルチバイト文字に対応しています
  *
  * @param[in] pattern 比較対象のパターン (ヌル終端文字列)
  * @param[in] string チェック対象の文字列 (ヌル終端文字列)
@@ -90,31 +93,62 @@ static void print_version(void) {
  */
 static int match_pattern_case_insensitive(const char *pattern,
                                           const char *string) {
-  const char *p = pattern;
-  const char *s = string;
-  const char *p_backup = NULL;
-  const char *s_backup = NULL;
+  const unsigned char *p = (const unsigned char *)pattern;
+  const unsigned char *s = (const unsigned char *)string;
+  const unsigned char *p_backup = NULL;
+  const unsigned char *s_backup = NULL;
 
   while (*s) {
-    if (*p == '*') {
-      // '*' の場合、パターンを 1 つ進めて、現在位置をバックアップ
-      p_backup = ++p;
-      s_backup = s;
-
-      // '*' が最後のパターンなら、常にマッチ
-      if (*p == '\0') return 1;
-    } else if (*p == '?' ||
-               tolower((unsigned char)*p) == tolower((unsigned char)*s)) {
-      // '?' か文字が一致する場合は次の文字へ (大文字小文字を区別しない)
-      p++;
-      s++;
-    } else if (p_backup) {
-      // 不一致でバックアップがある場合は、バックアップ位置から再開
-      p = p_backup;
-      s = ++s_backup;
+    // マルチバイト文字の処理
+    if (ismbblead(*s)) {
+      // マルチバイト文字の場合
+      if (ismbblead(*p) && *s && *(s + 1) && *p && *(p + 1)) {
+        // パターンもマルチバイト文字の場合は厳密比較
+        if ((*s == *p) && (*(s + 1) == *(p + 1))) {
+          s += 2;
+          p += 2;
+        } else if (*p == '*') {
+          // '*' の処理はシングルバイト文字と同様
+          p_backup = ++p;
+          s_backup = s;
+          if (*p == '\0') return 1;
+        } else if (p_backup) {
+          p = p_backup;
+          s = ++s_backup;
+        } else {
+          return 0;
+        }
+      } else if (*p == '*') {
+        // パターンが '*' の場合
+        p_backup = ++p;
+        s_backup = s;
+        if (*p == '\0') return 1;
+      } else if (*p == '?') {
+        // '?' はマルチバイト文字 1 文字にもマッチする
+        s += 2;  // マルチバイト文字なので 2 バイト進める
+        p++;     // パターンは 1 文字分進める
+      } else if (p_backup) {
+        p = p_backup;
+        s = ++s_backup;
+      } else {
+        return 0;
+      }
     } else {
-      // 不一致でバックアップがない場合はマッチしない
-      return 0;
+      // シングルバイト文字の場合は元の処理を使用
+      if (*p == '*') {
+        p_backup = ++p;
+        s_backup = s;
+        if (*p == '\0') return 1;
+      } else if (*p == '?' ||
+                 tolower((unsigned char)*p) == tolower((unsigned char)*s)) {
+        p++;
+        s++;
+      } else if (p_backup) {
+        p = p_backup;
+        s = ++s_backup;
+      } else {
+        return 0;
+      }
     }
   }
 
@@ -162,6 +196,9 @@ static int evaluate_conditions(const char *path, struct stat *st,
     // 名前パターンのチェック
     if (cond->pattern != NULL) {
       const char *basename = strrchr(path, '/');
+      if (!basename) {
+        basename = strrchr(path, '\\');
+      }
       basename = basename ? basename + 1 : path;
       if (!match_pattern_case_insensitive(cond->pattern, basename)) {
         match = 0;
@@ -199,13 +236,13 @@ static int evaluate_conditions(const char *path, struct stat *st,
  * @return int ルートディレクトリの場合は非ゼロ値、それ以外の場合は 0 を返す
  */
 static int is_root_directory(const char *path) {
-  // ケース1: "X:\" または "X:/" 形式 (ドライブレター+ルート)
+  // ケース 1: "X:\" または "X:/" 形式 (ドライブレター + ルート)
   if (strlen(path) == 3 && isalpha((unsigned char)path[0]) && path[1] == ':' &&
       (path[2] == '\\' || path[2] == '/')) {
     return 1;
   }
 
-  // ケース2: "/" または "\" 形式 (ルートディレクトリ)
+  // ケース 2: "/" または "\" 形式 (ルートディレクトリ)
   if (strcmp(path, "/") == 0 || strcmp(path, "\\") == 0) {
     return 1;
   }
@@ -235,9 +272,10 @@ static void safe_snprintf(char *dest, size_t dest_size, const char *format,
 }
 
 /**
- * @brief 2つのパスを連結する関数
+ * @brief 2 つのパスを連結する関数
  *
  * スラッシュの重複を防止し、Human68k のパス形式を考慮する
+ * マルチバイト文字に対応しています
  *
  * @param[out] dest      結合結果を格納するバッファ
  * @param[in]  dest_size バッファのサイズ
@@ -267,11 +305,29 @@ static void join_paths(char *dest, size_t dest_size, const char *dir,
   }
 
   // 通常のディレクトリの場合
-  char last_char = dir[dir_len - 1];
-  if (last_char == '/' || last_char == '\\') {
-    safe_snprintf(dest, dest_size, "%s%s", dir, file);
-  } else {
+  int needs_separator = 1;  // デフォルトでセパレータが必要
+
+  if (dir_len > 0) {
+    // mbsdec()を使用して、マルチバイト文字列の末尾の文字を正しく取得
+    unsigned char *dir_end = (unsigned char *)dir + dir_len;
+    unsigned char *last_char_pos =
+        (unsigned char *)mbsdec((const unsigned char *)dir, dir_end);
+
+    // 最後の文字のバイト数を計算 (マルチバイト文字の場合は 2 バイト)
+    size_t last_char_size = dir_end - last_char_pos;
+
+    // 最後の文字がスラッシュまたはバックスラッシュならセパレータは不要
+    if (last_char_size == 1 &&
+        (*last_char_pos == '/' || *last_char_pos == '\\')) {
+      needs_separator = 0;
+    }
+  }
+
+  // 区切り記号の有無に基づいてパスを結合
+  if (needs_separator) {
     safe_snprintf(dest, dest_size, "%s/%s", dir, file);
+  } else {
+    safe_snprintf(dest, dest_size, "%s%s", dir, file);
   }
 }
 

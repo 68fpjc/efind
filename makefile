@@ -1,5 +1,5 @@
 PROGRAM = efind
-VERSION = 0.1.1-dev
+VERSION = 0.1.1
 
 # ビルド成果物の設定
 TARGET = $(PROGRAM).x
@@ -13,15 +13,15 @@ AS = $(CROSS)as
 LD = $(CROSS)gcc
 
 # コンパイルオプション
-CFLAGS_COMMON = -m68000 -Wall -MMD -DPROGRAM=\"$(PROGRAM)\" -DVERSION=\"$(VERSION)\"
+CFLAGS_COMMON = -m68000 -Wall -MMD -Ilibmb -DPROGRAM=\"$(PROGRAM)\" -DVERSION=\"$(VERSION)\"
 ifdef RELEASE_BUILD
   CFLAGS = $(CFLAGS_COMMON) -O3  # リリースビルド
 else
   CFLAGS = $(CFLAGS_COMMON) -O0 -g  # 開発ビルド : デバッグ情報付き
 endif
-LDFLAGS =
+LDFLAGS = -Llibmb
 OBJS = main.o  # コンパイル対象のオブジェクトファイル
-LDLIBS =
+LDLIBS = -lmb
 DEPS = $(patsubst %.o,%.d,$(OBJS))
 
 # ターゲット定義
