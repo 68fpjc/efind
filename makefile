@@ -25,7 +25,7 @@ LDLIBS = -lmb
 DEPS = $(patsubst %.o,%.d,$(OBJS))
 
 # ターゲット定義
-.PHONY: all clean veryclean release bump-version
+.PHONY: all test clean veryclean release bump-version
 
 # デフォルトターゲット : 実行ファイルのビルド
 all: $(TARGET)
@@ -34,12 +34,25 @@ all: $(TARGET)
 $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
+# テストプログラム
+TESTTARGET = test/test_match_pattern.x test/test_join_paths.x
+TESTDEPS = $(patsubst %.x,%.d,$(TESTTARGET))
+
+# テストプログラムのビルド
+test: $(TESTTARGET)
+
+# テストプログラムのリンク
+test/%.x: test/%.o
+	$(LD) $(LDFLAGS) $^ $(LDLIBS) -o $@
+
 # 依存関係ファイルの取り込み
 -include $(DEPS)
+-include $(TESTDEPS)
 
 # 中間ファイルの削除
 clean:
 	-rm -f *.x *.o *.elf* *.d
+	-rm -f test/*.x test/*.o test/*.elf* test/*.d
 
 # 配布ディレクトリを含めた完全クリーン
 veryclean: clean
