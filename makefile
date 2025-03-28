@@ -20,7 +20,7 @@ else
   CFLAGS = $(CFLAGS_COMMON) -O0 -g  # 開発ビルド : デバッグ情報付き
 endif
 LDFLAGS = -Llibmb
-OBJS = main.o  # コンパイル対象のオブジェクトファイル
+OBJS = efind.o main.o  # コンパイル対象のオブジェクトファイル
 LDLIBS = -lmb
 DEPS = $(patsubst %.o,%.d,$(OBJS))
 
