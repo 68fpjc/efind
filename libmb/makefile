@@ -10,7 +10,7 @@ AR = $(CROSS)ar
 RANLIB = $(CROSS)ranlib
 
 # コンパイルオプション
-CFLAGS = -m68000 -Wall -MMD -I. -O3 -D__common
+CFLAGS = -m68000 -Wall -MMD -I. -O3 -D__common=
 
 LIBC_VERSION = 1.1.32a
 LIBC_ARCHIVE = v$(LIBC_VERSION).tar.gz
