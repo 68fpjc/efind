@@ -1,5 +1,5 @@
 PROGRAM = efind
-VERSION = 0.1.1
+VERSION = 0.1.2-dev
 
 # ビルド成果物の設定
 TARGET = $(PROGRAM).x
