@@ -11,20 +11,30 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "arch.h"
+
 #define MAX_PATH 1024  // パスの最大長
 
 /**
- * @brief 大文字小文字を無視したマルチバイト対応パターンマッチングを行う関数
+ * @brief 大文字小文字を考慮したマルチバイト対応パターンマッチングを行う関数
  *
- * 指定されたパターンと文字列を比較し、大文字小文字の違いを無視して一致するかどうかを判定する
+ * 指定されたパターンと文字列を比較し、大文字小文字の区別設定に従って一致するかどうかを判定する
  * マルチバイト文字に対応しています
  *
  * @param[in] pattern 比較対象のパターン (ヌル終端文字列)
  * @param[in] string チェック対象の文字列 (ヌル終端文字列)
+ * @param[in] ignore_case 大文字小文字を区別しない場合は 1、区別する場合は 0
+ * @param[in] fs_ignore_case ファイルシステムが大文字小文字を区別しない場合は
+ * 1、区別する場合は 0
  * @return 一致する場合は非ゼロ値、一致しない場合はゼロを返す
  */
-static int match_pattern_case_insensitive(const char *pattern,
-                                          const char *string) {
+static int match_pattern(const char *pattern, const char *string,
+                         int ignore_case, int fs_ignore_case) {
+  // ファイルシステムが大文字小文字を区別しない場合は、常に大文字小文字を区別しない処理を行う
+  if (fs_ignore_case) {
+    ignore_case = 1;
+  }
+
   const unsigned char *p = (const unsigned char *)pattern;
   const unsigned char *s = (const unsigned char *)string;
   const unsigned char *p_backup = NULL;
@@ -66,13 +76,14 @@ static int match_pattern_case_insensitive(const char *pattern,
         return 0;
       }
     } else {
-      // シングルバイト文字の場合は元の処理を使用
+      // シングルバイト文字の場合
       if (*p == '*') {
         p_backup = ++p;
         s_backup = s;
         if (*p == '\0') return 1;
-      } else if (*p == '?' ||
-                 tolower((unsigned char)*p) == tolower((unsigned char)*s)) {
+      } else if (*p == '?' || (ignore_case ? tolower((unsigned char)*p) ==
+                                                 tolower((unsigned char)*s)
+                                           : *p == *s)) {
         p++;
         s++;
       } else if (p_backup) {
@@ -99,10 +110,12 @@ static int match_pattern_case_insensitive(const char *pattern,
  * @param[in] path 評価対象のファイルパス
  * @param[in] st ファイルに関するメタデータを含む struct stat へのポインタ
  * @param[in] opts 評価基準を含む Options 構造体へのポインタ
+ * @param[in] fs_ignore_case ファイルシステムが大文字小文字を区別しない場合は
+ * 1、区別する場合は 0
  * @return 条件を満たす場合は 1 を返し、満たさない場合は 0 を返す
  */
-static int evaluate_conditions(const char *path, struct stat *st,
-                               Options *opts) {
+static int evaluate_conditions(const char *path, struct stat *st, Options *opts,
+                               int fs_ignore_case) {
   // 条件が指定されていない場合はすべて一致とみなす
   if (opts->condition_count == 0) {
     return 1;  // 条件がない場合はすべて一致
@@ -132,7 +145,8 @@ static int evaluate_conditions(const char *path, struct stat *st,
         basename = strrchr(path, '\\');
       }
       basename = basename ? basename + 1 : path;
-      if (!match_pattern_case_insensitive(cond->pattern, basename)) {
+      if (!match_pattern(cond->pattern, basename, cond->ignore_case,
+                         fs_ignore_case)) {
         match = 0;
       }
     }
@@ -283,6 +297,15 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
   int entry_capacity = 0;
   int return_status = 0;
 
+  // ファイルシステムの大文字小文字の区別を検索開始時に1回だけチェック
+  static int fs_case_checked = 0;
+  static int fs_ignore_case = 0;
+
+  if (!fs_case_checked) {
+    fs_ignore_case = is_filesystem_ignore_case();
+    fs_case_checked = 1;
+  }
+
   // 開始ディレクトリ (current_depth == 0) のときの特別処理
   if (current_depth == 0) {
     int should_print_base_dir = 0;
@@ -375,7 +398,7 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
     }
 
     // 条件を評価して、マッチすれば出力
-    if (evaluate_conditions(path, &statbuf, opts)) {
+    if (evaluate_conditions(path, &statbuf, opts, fs_ignore_case)) {
       printf("%s\n", path);
     }
 

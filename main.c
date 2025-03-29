@@ -75,6 +75,7 @@ static int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
         Condition *cond = &opts->conditions[opts->condition_count++];
         cond->pattern = NULL;
         cond->op = OP_AND;
+        cond->ignore_case = 0;  // デフォルトは大文字小文字を区別する
 
         char type = argv[++i][0];
         switch (type) {
@@ -106,6 +107,9 @@ static int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
         cond->pattern = argv[++i];
         cond->type = TYPE_NONE;
         cond->op = OP_AND;
+
+        // -name と -iname で大文字小文字の区別フラグを設定
+        cond->ignore_case = (strcmp(argv[i - 1], "-iname") == 0) ? 1 : 0;
       } else {
         fprintf(stderr, "Error: %s requires an argument\n", argv[i]);
         return 0;

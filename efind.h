@@ -31,9 +31,10 @@ typedef enum {
  * @struct Condition
  */
 typedef struct {
-  char *pattern;  // 検索に使用するパターン文字列
-  FileType type;  // ファイルの種類を指定するためのフィールド
-  Operator op;    // 条件を組み合わせるための演算子
+  char *pattern;    // 検索に使用するパターン文字列
+  FileType type;    // ファイルの種類を指定するためのフィールド
+  Operator op;      // 条件を組み合わせるための演算子
+  int ignore_case;  // 大文字小文字を区別しない場合は 1、区別する場合は 0
 } Condition;
 
 /**

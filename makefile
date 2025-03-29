@@ -20,7 +20,7 @@ else
   CFLAGS = $(CFLAGS_COMMON) -O0 -g  # 開発ビルド : デバッグ情報付き
 endif
 LDFLAGS = -Llibmb
-OBJS = efind.o main.o  # コンパイル対象のオブジェクトファイル
+OBJS = main.o efind.o arch_x68k.o  # コンパイル対象のオブジェクトファイル
 LDLIBS = -lmb
 DEPS = $(patsubst %.o,%.d,$(OBJS))
 
@@ -42,7 +42,7 @@ TESTDEPS = $(patsubst %.x,%.d,$(TESTTARGET))
 test: $(TESTTARGET)
 
 # テストプログラムのリンク
-test/%.x: test/%.o
+test/%.x: test/%.o arch_x68k.o
 	$(LD) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
 # 依存関係ファイルの取り込み
