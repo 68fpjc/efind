@@ -35,7 +35,7 @@ $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
 # テストプログラム
-TESTTARGET = test/test_match_pattern.x test/test_join_paths.x
+TESTTARGET = test/test_match_pattern.x test/test_join_paths.x test/test_fs_ic.x
 TESTDEPS = $(patsubst %.x,%.d,$(TESTTARGET))
 
 # テストプログラムのビルド
