@@ -4,8 +4,6 @@
 
 X68000 + Human68k 用の GNU find モドキです。 find は先人たちによる移植版がいくつか存在しますが、自分向けに作りました。
 
-GitHub Copilot + Claude 3.7 Sonnet で雑に作ったものです。
-
 ## サポートされているオプション
 
 - `-maxdepth LEVELS` : 検索を指定された深さに制限
@@ -14,6 +12,8 @@ GitHub Copilot + Claude 3.7 Sonnet で雑に作ったものです。
 - `-o` : 条件を論理 OR 演算子で結合
 - `--help` / `-help` : ヘルプメッセージを表示
 - `--version` / `-version` : バージョン情報を表示
+
+なお、 [(V)TwentyOne.sys](https://github.com/kg68k/twentyonesys) が組み込まれ、かつ `+C` が設定されている場合、 `-name` は大文字 / 小文字を区別します。
 
 ## 使用例
 
@@ -36,8 +36,6 @@ efind . -maxdepth 2 -name '*.txt'
 気が向いたら直します。
 
 - 遅い
-- 実は `-name` と `-iname` は同じ実装。 TwentyOne +C 環境では期待通りに動かない
-- シンボリックリンクに対応していない
 - 空のドライブを指定するとエラーになる
 - その他、いろいろ
 
