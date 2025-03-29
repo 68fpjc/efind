@@ -140,7 +140,5 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  search_directory(start_dir, 0, &opts);
-
-  return 0;
+  return search_directory(start_dir, 0, &opts);
 }

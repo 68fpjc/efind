@@ -48,6 +48,15 @@ typedef struct {
 } Options;
 
 // 関数プロトタイプ
-void search_directory(const char *base_dir, int current_depth, Options *opts);
+
+/**
+ * @brief 指定されたディレクトリを再帰的に検索する関数
+ *
+ * @param[in] base_dir 検索を開始するディレクトリのパス
+ * @param[in] current_depth 現在の検索深さ
+ * @param[in] opts 検索オプションを含む構造体へのポインタ
+ * @return int 成功時は 0、エラー時は 1 を返す
+ */
+int search_directory(const char *base_dir, int current_depth, Options *opts);
 
 #endif /* EFIND_H */

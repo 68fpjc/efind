@@ -273,14 +273,7 @@ typedef struct {
   int is_dir;      // ディレクトリかどうかのフラグ
 } DirEntry;
 
-/**
- * @brief 指定されたディレクトリを再帰的に検索する関数
- *
- * @param[in] base_dir 検索を開始するディレクトリのパス
- * @param[in] current_depth 現在の検索深さ
- * @param[in] opts 検索オプションを含む構造体へのポインタ
- */
-void search_directory(const char *base_dir, int current_depth, Options *opts) {
+int search_directory(const char *base_dir, int current_depth, Options *opts) {
   DIR *dir;
   struct dirent *entry;
   char path[MAX_PATH];
@@ -288,6 +281,7 @@ void search_directory(const char *base_dir, int current_depth, Options *opts) {
   DirEntry *entries = NULL;
   int entry_count = 0;
   int entry_capacity = 0;
+  int return_status = 0;
 
   // 開始ディレクトリ (current_depth == 0) のときの特別処理
   if (current_depth == 0) {
@@ -309,14 +303,15 @@ void search_directory(const char *base_dir, int current_depth, Options *opts) {
   }
 
   if (opts->maxdepth >= 0 && current_depth > opts->maxdepth - 1) {
-    return;
+    return 0;
   }
 
   // ディレクトリを開いてエントリを収集
   if ((dir = opendir(base_dir)) == NULL) {
     fprintf(stderr, "Cannot open directory '%s': %s\n", base_dir,
             strerror(errno));
-    return;
+    // 最初の呼び出し (current_depth == 0) でエラーの場合のみエラーコードを返す
+    return (current_depth == 0) ? 1 : 0;
   }
 
   // 収集するエントリ用の初期メモリを確保
@@ -325,7 +320,7 @@ void search_directory(const char *base_dir, int current_depth, Options *opts) {
   if (entries == NULL) {
     fprintf(stderr, "Memory allocation error\n");
     closedir(dir);
-    return;
+    return 1;
   }
 
   // ディレクトリエントリを読み込む ("." と ".." を除く)
@@ -341,7 +336,9 @@ void search_directory(const char *base_dir, int current_depth, Options *opts) {
           (DirEntry *)realloc(entries, sizeof(DirEntry) * entry_capacity);
       if (new_entries == NULL) {
         fprintf(stderr, "Memory allocation error during expansion\n");
-        break;
+        free(entries);
+        closedir(dir);
+        return 1;
       }
       entries = new_entries;
     }
@@ -390,4 +387,6 @@ void search_directory(const char *base_dir, int current_depth, Options *opts) {
 
   // メモリを解放
   free(entries);
+
+  return return_status;
 }
