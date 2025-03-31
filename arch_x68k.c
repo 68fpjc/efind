@@ -8,7 +8,7 @@ int is_filesystem_ignore_case(void) {
       "addq.l	#2, %%sp\n"
       : "=d"(ret)  // Output operand to capture d0
   );
-  // _TWON_C_BIT が立っていれば 0 を返す
-  // DOS _TWON の戻り値が 0xffffffff の場合も、関数の戻り値は 0 となる
-  return ret & (1 << 30) ? 0 : 1;
+  // DOS _TWON の戻り値が 0xffffffff でなく、
+  // かつ _TWON_C_BIT が立っていれば 0 を返す
+  return ret != -1 && ret & (1 << 30) ? 0 : 1;
 }
