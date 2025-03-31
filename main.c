@@ -35,18 +35,19 @@ static void print_version(void) {
  * @param[in] argv コマンドライン引数の配列
  * @param[out] opts 解析結果を格納するためのオプション構造体へのポインタ
  * @param[out] start_dir 開始ディレクトリを格納するためのポインタ
- * @return 成功時は 0 、エラー時は負の値を返す
+ * @return 成功時は 1 、エラー時は 0 を返す
  */
 static int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
-  if (argc < 2) {
-    print_help();
-    return 0;
-  }
-
+  // デフォルト値の設定
   opts->maxdepth =
       -1;  // 最大深さのデフォルト値を設定 (-1 は制限なしを意味する)
   opts->condition_count = 0;  // 条件の数を初期化
   *start_dir = ".";           // 開始ディレクトリのデフォルト値を設定
+
+  // コマンドライン引数がない場合はデフォルト設定で実行する
+  if (argc < 2) {
+    return 1;  // 引数なしでも成功として扱う
+  }
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-help") == 0) {

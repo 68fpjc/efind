@@ -9,11 +9,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 
 #include "arch.h"
 
 #define MAX_PATH 1024  // パスの最大長
+
+/**
+ * @brief ディレクトリエントリを保持する構造体
+ *
+ * ディレクトリ内のエントリ情報を格納するために使用するフィールドにはエントリ名や属性などが含まれる
+ */
+typedef struct {
+  char name[256];  // ファイル名 (最大長を確保)
+  int is_dir;      // ディレクトリかどうかのフラグ
+} DirEntry;
 
 /**
  * @brief 大文字小文字を考慮したマルチバイト対応パターンマッチングを行う関数
@@ -105,16 +114,15 @@ static int match_pattern(const char *pattern, const char *string,
 /**
  * @brief 指定された条件を評価する関数
  *
- * ファイルパスとそのメタデータに基づいて、指定された条件を評価し、条件を満たすかどうかを判定する
+ * ディレクトリエントリに基づいて、指定された条件を評価し、条件を満たすかどうかを判定する
  *
- * @param[in] path 評価対象のファイルパス
- * @param[in] st ファイルに関するメタデータを含む struct stat へのポインタ
+ * @param[in] entry 評価対象のディレクトリエントリ
  * @param[in] opts 評価基準を含む Options 構造体へのポインタ
  * @param[in] fs_ignore_case ファイルシステムが大文字小文字を区別しない場合は
  * 1、区別する場合は 0
  * @return 条件を満たす場合は 1 を返し、満たさない場合は 0 を返す
  */
-static int evaluate_conditions(const char *path, struct stat *st, Options *opts,
+static int evaluate_conditions(const DirEntry *entry, Options *opts,
                                int fs_ignore_case) {
   // 条件が指定されていない場合はすべて一致とみなす
   if (opts->condition_count == 0) {
@@ -131,21 +139,16 @@ static int evaluate_conditions(const char *path, struct stat *st, Options *opts,
 
     // ファイルタイプのチェック
     if (cond->type != TYPE_NONE) {
-      if (cond->type == TYPE_FILE && !S_ISREG(st->st_mode)) {
+      if (cond->type == TYPE_FILE && entry->is_dir) {
         match = 0;
-      } else if (cond->type == TYPE_DIR && !S_ISDIR(st->st_mode)) {
+      } else if (cond->type == TYPE_DIR && !entry->is_dir) {
         match = 0;
       }
     }
 
     // 名前パターンのチェック
     if (cond->pattern != NULL) {
-      const char *basename = strrchr(path, '/');
-      if (!basename) {
-        basename = strrchr(path, '\\');
-      }
-      basename = basename ? basename + 1 : path;
-      if (!match_pattern(cond->pattern, basename, cond->ignore_case,
+      if (!match_pattern(cond->pattern, entry->name, cond->ignore_case,
                          fs_ignore_case)) {
         match = 0;
       }
@@ -277,21 +280,10 @@ static void join_paths(char *dest, size_t dest_size, const char *dir,
   }
 }
 
-/**
- * @brief ディレクトリエントリを保持する構造体
- *
- * ディレクトリ内のエントリ情報を格納するために使用するフィールドにはエントリ名や属性などが含まれる
- */
-typedef struct {
-  char name[256];  // ファイル名 (最大長を確保)
-  int is_dir;      // ディレクトリかどうかのフラグ
-} DirEntry;
-
 int search_directory(const char *base_dir, int current_depth, Options *opts) {
   DIR *dir;
   struct dirent *entry;
   char path[MAX_PATH];
-  struct stat statbuf;
   DirEntry *entries = NULL;
   int entry_count = 0;
   int entry_capacity = 0;
@@ -370,15 +362,8 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
     safe_snprintf(entries[entry_count].name, sizeof(entries[entry_count].name),
                   "%s", entry->d_name);
 
-    // パスを結合
-    join_paths(path, sizeof(path), base_dir, entry->d_name);
-
-    // ディレクトリかどうか確認
-    if (stat(path, &statbuf) != -1 && S_ISDIR(statbuf.st_mode)) {
-      entries[entry_count].is_dir = 1;
-    } else {
-      entries[entry_count].is_dir = 0;
-    }
+    // ディレクトリかどうかを d_type から直接判断
+    entries[entry_count].is_dir = (entry->d_type == DT_DIR);
 
     entry_count++;
   }
@@ -391,14 +376,8 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
     // パスを結合
     join_paths(path, sizeof(path), base_dir, entries[i].name);
 
-    // ファイルの情報を取得
-    if (stat(path, &statbuf) == -1) {
-      fprintf(stderr, "Cannot stat '%s': %s\n", path, strerror(errno));
-      continue;
-    }
-
     // 条件を評価して、マッチすれば出力
-    if (evaluate_conditions(path, &statbuf, opts, fs_ignore_case)) {
+    if (evaluate_conditions(&entries[i], opts, fs_ignore_case)) {
       printf("%s\n", path);
     }
 
