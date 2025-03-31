@@ -25,94 +25,96 @@ typedef struct {
 } DirEntry;
 
 /**
- * @brief 大文字小文字を考慮したマルチバイト対応パターンマッチングを行う関数
+ * @brief パターンマッチングを行う
  *
  * 指定されたパターンと文字列を比較し、大文字小文字の区別設定に従って一致するかどうかを判定する
- * マルチバイト文字に対応しています
  *
  * @param[in] pattern 比較対象のパターン (ヌル終端文字列)
  * @param[in] string チェック対象の文字列 (ヌル終端文字列)
  * @param[in] ignore_case 大文字小文字を区別しない場合は 1、区別する場合は 0
  * @param[in] fs_ignore_case ファイルシステムが大文字小文字を区別しない場合は
  * 1、区別する場合は 0
- * @return 一致する場合は非ゼロ値、一致しない場合はゼロを返す
+ * @return 一致する場合は非ゼロ値、一致しない場合は 0
  */
 static int match_pattern(const char *pattern, const char *string,
-                         int ignore_case, int fs_ignore_case) {
+                         int ignore_case, const int fs_ignore_case) {
   // ファイルシステムが大文字小文字を区別しない場合は、常に大文字小文字を区別しない処理を行う
   if (fs_ignore_case) {
     ignore_case = 1;
   }
 
-  const unsigned char *p = (const unsigned char *)pattern;
-  const unsigned char *s = (const unsigned char *)string;
-  const unsigned char *p_backup = NULL;
-  const unsigned char *s_backup = NULL;
+  unsigned char *p = (unsigned char *)pattern;
+  unsigned char *s = (unsigned char *)string;
+  unsigned char *p_backup = NULL;
+  unsigned char *s_backup = NULL;
 
   while (*s) {
-    // マルチバイト文字の処理
-    if (ismbblead(*s)) {
-      // マルチバイト文字の場合
-      if (ismbblead(*p) && *s && *(s + 1) && *p && *(p + 1)) {
-        // パターンもマルチバイト文字の場合は厳密比較
-        if ((*s == *p) && (*(s + 1) == *(p + 1))) {
-          s += 2;
-          p += 2;
-        } else if (*p == '*') {
-          // '*' の処理はシングルバイト文字と同様
-          p_backup = ++p;
-          s_backup = s;
-          if (*p == '\0') return 1;
-        } else if (p_backup) {
-          p = p_backup;
-          s = ++s_backup;
-        } else {
-          return 0;
-        }
-      } else if (*p == '*') {
-        // パターンが '*' の場合
-        p_backup = ++p;
-        s_backup = s;
-        if (*p == '\0') return 1;
-      } else if (*p == '?') {
-        // '?' はマルチバイト文字 1 文字にもマッチする
-        s += 2;  // マルチバイト文字なので 2 バイト進める
-        p++;     // パターンは 1 文字分進める
+    if (*p == '*') {
+      // '*' の場合: バックアップポインタを更新して次のパターン文字へ
+      p_backup = mbsinc(p);
+      s_backup = s;
+      p = p_backup;
+      if (*p == '\0') return 1;  // パターンの終わりなら一致
+    } else if (*p == '?') {
+      // '?' の場合: 任意の 1 文字にマッチ (マルチバイト文字も含む)
+      s = mbsinc(s);
+      p = mbsinc(p);
+    } else if (ismbblead(*p) && ismbblead(*s)) {
+      // 両方がマルチバイト文字の先頭の場合
+      if ((*p == *s) && (*(p + 1) == *(s + 1))) {
+        // マルチバイト文字が一致
+        s = mbsinc(s);
+        p = mbsinc(p);
       } else if (p_backup) {
+        // バックトラック
         p = p_backup;
-        s = ++s_backup;
+        s = mbsinc(s_backup);
+        s_backup = s;
       } else {
-        return 0;
+        return 0;  // 不一致
       }
+    } else if (ismbblead(*s)) {
+      // 文字列側だけがマルチバイト文字の場合
+      if (p_backup) {
+        // バックトラック
+        p = p_backup;
+        s = mbsinc(s_backup);
+        s_backup = s;
+      } else {
+        return 0;  // 不一致
+      }
+    } else if (ismbblead(*p)) {
+      // パターン側だけがマルチバイト文字の場合
+      if (p_backup) {
+        // バックトラック
+        p = p_backup;
+        s = mbsinc(s_backup);
+        s_backup = s;
+      } else {
+        return 0;  // 不一致
+      }
+    } else if (ignore_case ? tolower(*p) == tolower(*s) : *p == *s) {
+      // シングルバイト文字が一致
+      s++;
+      p++;
+    } else if (p_backup) {
+      // バックトラック
+      p = p_backup;
+      s = ++s_backup;
     } else {
-      // シングルバイト文字の場合
-      if (*p == '*') {
-        p_backup = ++p;
-        s_backup = s;
-        if (*p == '\0') return 1;
-      } else if (*p == '?' || (ignore_case ? tolower((unsigned char)*p) ==
-                                                 tolower((unsigned char)*s)
-                                           : *p == *s)) {
-        p++;
-        s++;
-      } else if (p_backup) {
-        p = p_backup;
-        s = ++s_backup;
-      } else {
-        return 0;
-      }
+      return 0;  // 不一致
     }
   }
 
   // 残りのパターンが全て '*' なら成功
-  while (*p == '*') p++;
+  while (*p == '*') p = mbsinc(p);
 
   // パターンの終わりまで来たらマッチ
   return *p == '\0';
 }
 
 /**
- * @brief 指定された条件を評価する関数
+ * @brief 指定された条件を評価する
  *
  * ディレクトリエントリに基づいて、指定された条件を評価し、条件を満たすかどうかを判定する
  *
@@ -120,7 +122,7 @@ static int match_pattern(const char *pattern, const char *string,
  * @param[in] opts 評価基準を含む Options 構造体へのポインタ
  * @param[in] fs_ignore_case ファイルシステムが大文字小文字を区別しない場合は
  * 1、区別する場合は 0
- * @return 条件を満たす場合は 1 を返し、満たさない場合は 0 を返す
+ * @return 条件を満たす場合は 1 を返し、満たさない場合は 0
  */
 static int evaluate_conditions(const DirEntry *entry, Options *opts,
                                int fs_ignore_case) {
@@ -171,36 +173,7 @@ static int evaluate_conditions(const DirEntry *entry, Options *opts,
 }
 
 /**
- * @brief パスがルートディレクトリかどうかを判定する関数
- *
- * 指定されたパスがルートディレクトリであるかを判定する
- *
- * Human68k 環境では以下のようなパスがルートディレクトリとみなされる :
- *
- *   - ドライブ指定のルート (例: n:\)
- *
- *   - スラッシュやバックスラッシュのみのパス (例: / または \)
- *
- * @param[in] path 判定対象のパス文字列
- * @return int ルートディレクトリの場合は非ゼロ値、それ以外の場合は 0 を返す
- */
-static int is_root_directory(const char *path) {
-  // ケース 1: "X:\" または "X:/" 形式 (ドライブレター + ルート)
-  if (strlen(path) == 3 && isalpha((unsigned char)path[0]) && path[1] == ':' &&
-      (path[2] == '\\' || path[2] == '/')) {
-    return 1;
-  }
-
-  // ケース 2: "/" または "\" 形式 (ルートディレクトリ)
-  if (strcmp(path, "/") == 0 || strcmp(path, "\\") == 0) {
-    return 1;
-  }
-
-  return 0;
-}
-
-/**
- * @brief 安全な snprintf 関数のラッパー
+ * @brief snprintf 関数のラッパー
  *
  * バッファが不足する場合でも必ず NULL 終端する
  *
@@ -221,10 +194,7 @@ static void safe_snprintf(char *dest, size_t dest_size, const char *format,
 }
 
 /**
- * @brief 2 つのパスを連結する関数
- *
- * スラッシュの重複を防止し、Human68k のパス形式を考慮する
- * マルチバイト文字に対応しています
+ * @brief 2 つのパスを連結する
  *
  * @param[out] dest      結合結果を格納するバッファ
  * @param[in]  dest_size バッファのサイズ
@@ -233,51 +203,23 @@ static void safe_snprintf(char *dest, size_t dest_size, const char *format,
  */
 static void join_paths(char *dest, size_t dest_size, const char *dir,
                        const char *file) {
-  // ベースディレクトリが空か終端がスラッシュかバックスラッシュ
-  const size_t dir_len = strlen(dir);
-  if (dir_len == 0) {
-    strncpy(dest, file, dest_size - 1);
-    dest[dest_size - 1] = '\0';
-    return;
-  }
+  safe_snprintf(dest, dest_size, "%s%s%s",  //
+                dir, is_path_end_with_separator(dir) ? "" : "/", file);
+}
 
-  // ルートディレクトリの場合は特別処理
-  if (is_root_directory(dir)) {
-    // ドライブ指定のルートの場合 (例: "n:\")
-    if (dir_len == 3 && isalpha((unsigned char)dir[0]) && dir[1] == ':') {
-      safe_snprintf(dest, dest_size, "%c:%c%s", dir[0], dir[2], file);
-    } else {
-      // UNIX スタイルのルート
-      safe_snprintf(dest, dest_size, "/%s", file);
-    }
-    return;
-  }
-
-  // 通常のディレクトリの場合
-  int needs_separator = 1;  // デフォルトでセパレータが必要
-
-  if (dir_len > 0) {
-    // mbsdec()を使用して、マルチバイト文字列の末尾の文字を正しく取得
-    unsigned char *dir_end = (unsigned char *)dir + dir_len;
-    unsigned char *last_char_pos =
-        (unsigned char *)mbsdec((const unsigned char *)dir, dir_end);
-
-    // 最後の文字のバイト数を計算 (マルチバイト文字の場合は 2 バイト)
-    size_t last_char_size = dir_end - last_char_pos;
-
-    // 最後の文字がスラッシュまたはバックスラッシュならセパレータは不要
-    if (last_char_size == 1 &&
-        (*last_char_pos == '/' || *last_char_pos == '\\')) {
-      needs_separator = 0;
+/**
+ * @brief オプションに -type f が含まれているかを返す
+ *
+ * @param[in] opts オプション構造体へのポインタ
+ * @return -type f が指定されている場合は 1、そうでない場合は 0
+ */
+static int has_type_file_option(Options *opts) {
+  for (int i = 0; i < opts->condition_count; i++) {
+    if (opts->conditions[i].type == TYPE_FILE) {
+      return 1;
     }
   }
-
-  // 区切り記号の有無に基づいてパスを結合
-  if (needs_separator) {
-    safe_snprintf(dest, dest_size, "%s/%s", dir, file);
-  } else {
-    safe_snprintf(dest, dest_size, "%s%s", dir, file);
-  }
+  return 0;
 }
 
 int search_directory(const char *base_dir, int current_depth, Options *opts) {
@@ -298,23 +240,10 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
     fs_case_checked = 1;
   }
 
-  // 開始ディレクトリ (current_depth == 0) のときの特別処理
-  if (current_depth == 0) {
-    int should_print_base_dir = 0;
-
-    // -type d が指定されているかチェック
-    for (int i = 0; i < opts->condition_count; i++) {
-      if (opts->conditions[i].type == TYPE_DIR) {
-        should_print_base_dir = 1;
-        break;
-      }
-    }
-
-    // 条件を満たしていて、ルートディレクトリでなければ出力
-    if (should_print_base_dir && !is_root_directory(base_dir)) {
-      // ここでは深い検査せず、単に出力する (簡易実装)
-      printf("%s\n", base_dir);
-    }
+  // current_depth = 0 かつ -type f が指定されていない場合のみ
+  // ベースディレクトリを表示
+  if (current_depth == 0 && !has_type_file_option(opts)) {
+    printf("%s\n", base_dir);
   }
 
   if (opts->maxdepth >= 0 && current_depth > opts->maxdepth - 1) {
@@ -362,8 +291,7 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
     safe_snprintf(entries[entry_count].name, sizeof(entries[entry_count].name),
                   "%s", entry->d_name);
 
-    // ディレクトリかどうかを d_type から直接判断
-    entries[entry_count].is_dir = (entry->d_type == DT_DIR);
+    entries[entry_count].is_dir = is_directory_entry(entry);
 
     entry_count++;
   }
