@@ -43,6 +43,10 @@ efind . -maxdepth 2 -name '*.txt'
 
 X68000 ではビルドできません。 [elf2x68k](https://github.com/yunkya2/elf2x68k) が必要です。 makefile のあるディレクトリで `make` してください。
 
+## ライセンス
+
+`libmb` ディレクトリについては [libmb/README.md](libmb/README.md) を参照。
+
 ## 連絡先
 
 https://github.com/68fpjc/efind
