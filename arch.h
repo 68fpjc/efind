@@ -26,4 +26,12 @@ int is_directory_entry(struct dirent *entry);
  */
 int is_path_end_with_separator(const char *path);
 
+/**
+ * @brief パス文字列の末尾に "." を付加すべきかどうかを判定する
+ *
+ * @param[in] path 判定するパス文字列
+ * @return int "." を付加すべき場合は非ゼロ値、それ以外は 0
+ */
+int should_append_dot(const char *path);
+
 #endif /* ARCH_H */

@@ -12,7 +12,7 @@
 
 #include "arch.h"
 
-#define MAX_PATH 1024  // パスの最大長
+#define MAX_PATH 256  // パスの最大長
 
 /**
  * @brief ディレクトリエントリを保持する構造体
@@ -215,6 +215,7 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
   int entry_count = 0;
   int entry_capacity = 0;
   int return_status = 0;
+  char base_dir_tmp[MAX_PATH];
 
   // ファイルシステムの大文字小文字の区別を検索開始時に1回だけチェック
   static int fs_case_checked = 0;
@@ -225,12 +226,15 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
     fs_case_checked = 1;
   }
 
+  safe_snprintf(base_dir_tmp, sizeof(base_dir_tmp), "%s%s", base_dir,
+                should_append_dot(base_dir) ? "." : "");
+
   if (opts->maxdepth >= 0 && current_depth > opts->maxdepth - 1) {
     return 0;
   }
 
   // ディレクトリを開いてエントリを収集
-  if ((dir = opendir(base_dir)) == NULL) {
+  if ((dir = opendir(base_dir_tmp)) == NULL) {
     fprintf(stderr, "Cannot open directory '%s': %s\n", base_dir,
             strerror(errno));
     // 最初の呼び出し (current_depth == 0) でエラーの場合のみエラーコードを返す
@@ -281,7 +285,7 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
   // 収集したエントリを処理
   for (int i = 0; i < entry_count; i++) {
     // パスを結合
-    join_paths(path, sizeof(path), base_dir, entries[i].name);
+    join_paths(path, sizeof(path), base_dir_tmp, entries[i].name);
 
     // 条件を評価して、マッチすれば出力
     if (evaluate_conditions(&entries[i], opts, fs_ignore_case)) {

@@ -1,5 +1,7 @@
+#include <ctype.h>
 #include <dirent.h>
 #include <mbstring.h>
+#include <string.h>
 
 #include "arch.h"
 
@@ -26,4 +28,9 @@ int is_path_end_with_separator(const char *path) {
     p = mbsinc((unsigned char *)p);
   }
   return p_prev && (*p_prev == '/' || *p_prev == '\\');
+}
+
+int should_append_dot(const char *path) {
+  // path がドライブレターのみの場合は、"." を付加する
+  return strlen(path) == 2 && isalpha((unsigned char)path[0]) && path[1] == ':';
 }
