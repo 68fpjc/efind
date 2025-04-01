@@ -207,21 +207,6 @@ static void join_paths(char *dest, size_t dest_size, const char *dir,
                 dir, is_path_end_with_separator(dir) ? "" : "/", file);
 }
 
-/**
- * @brief オプションに -type f が含まれているかを返す
- *
- * @param[in] opts オプション構造体へのポインタ
- * @return -type f が指定されている場合は 1、そうでない場合は 0
- */
-static int has_type_file_option(Options *opts) {
-  for (int i = 0; i < opts->condition_count; i++) {
-    if (opts->conditions[i].type == TYPE_FILE) {
-      return 1;
-    }
-  }
-  return 0;
-}
-
 int search_directory(const char *base_dir, int current_depth, Options *opts) {
   DIR *dir;
   struct dirent *entry;
@@ -238,12 +223,6 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
   if (!fs_case_checked) {
     fs_ignore_case = is_filesystem_ignore_case();
     fs_case_checked = 1;
-  }
-
-  // current_depth = 0 かつ -type f が指定されていない場合のみ
-  // ベースディレクトリを表示
-  if (current_depth == 0 && !has_type_file_option(opts)) {
-    printf("%s\n", base_dir);
   }
 
   if (opts->maxdepth >= 0 && current_depth > opts->maxdepth - 1) {
