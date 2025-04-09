@@ -48,69 +48,54 @@ static int match_pattern(const char *pattern, const char *string,
   unsigned char *p_backup = NULL;
   unsigned char *s_backup = NULL;
 
-  while (*s) {
-    if (*p == '*') {
+  unsigned int p_char, s_char;
+
+  while ((s_char = mbsnextc(s))) {
+    p_char = mbsnextc(p);
+
+    if (p_char == '*') {
       // '*' の場合: バックアップポインタを更新して次のパターン文字へ
-      p_backup = mbsinc(p);
-      s_backup = s;
-      p = p_backup;
-      if (*p == '\0') return 1;  // パターンの終わりなら一致
-    } else if (*p == '?') {
-      // '?' の場合: 任意の 1 文字にマッチ (マルチバイト文字も含む)
-      s = mbsinc(s);
       p = mbsinc(p);
-    } else if (ismbblead(*p) && ismbblead(*s)) {
-      // 両方がマルチバイト文字の先頭の場合
-      if ((*p == *s) && (*(p + 1) == *(s + 1))) {
-        // マルチバイト文字が一致
+      p_backup = p;
+      s_backup = s;
+
+      // パターンの終わりなら一致
+      if (!mbsnextc(p)) return 1;
+
+      p_char = mbsnextc(p);
+    } else {
+      if (p_char == '?') {
+        // '?' の場合: 任意の 1 文字にマッチ (マルチバイト文字も含む)
         s = mbsinc(s);
         p = mbsinc(p);
-      } else if (p_backup) {
-        // バックトラック
-        p = p_backup;
-        s = mbsinc(s_backup);
-        s_backup = s;
       } else {
-        return 0;  // 不一致
+        // 大文字小文字を区別しない場合はアルファベット文字を小文字に変換
+        if (ignore_case && ismbbalpha(p_char) && ismbbalpha(s_char)) {
+          p_char = tolower(p_char);
+          s_char = tolower(s_char);
+        }
+
+        if (p_char == s_char) {
+          // 文字が一致 (マルチバイト文字も含む)
+          s = mbsinc(s);
+          p = mbsinc(p);
+        } else if (p_backup) {
+          // バックトラック
+          p = p_backup;
+          s = mbsinc(s_backup);
+          s_backup = s;
+        } else {
+          return 0;  // 不一致
+        }
       }
-    } else if (ismbblead(*s)) {
-      // 文字列側だけがマルチバイト文字の場合
-      if (p_backup) {
-        // バックトラック
-        p = p_backup;
-        s = mbsinc(s_backup);
-        s_backup = s;
-      } else {
-        return 0;  // 不一致
-      }
-    } else if (ismbblead(*p)) {
-      // パターン側だけがマルチバイト文字の場合
-      if (p_backup) {
-        // バックトラック
-        p = p_backup;
-        s = mbsinc(s_backup);
-        s_backup = s;
-      } else {
-        return 0;  // 不一致
-      }
-    } else if (ignore_case ? tolower(*p) == tolower(*s) : *p == *s) {
-      // シングルバイト文字が一致
-      s++;
-      p++;
-    } else if (p_backup) {
-      // バックトラック
-      p = p_backup;
-      s = ++s_backup;
-    } else {
-      return 0;  // 不一致
     }
   }
 
   // 残りのパターンが全て '*' なら成功
-  while (*p == '*') p = mbsinc(p);
+  while (mbsnextc(p) == '*') p = mbsinc(p);
 
   // パターンの終わりまで来たらマッチ
-  return *p == '\0';
+  return !mbsnextc(p);
 }
 
 /**

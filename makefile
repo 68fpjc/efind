@@ -6,6 +6,14 @@ TARGET = $(PROGRAM).x
 ARCHIVE = $(PROGRAM)-$(VERSION).zip
 DISTDIR = dist
 
+LIBMB_VERSION = 20240408-01
+LIBMB_ARC = libmb-$(LIBMB_VERSION).zip
+LIBMB_URL = https://github.com/68fpjc/libmb/releases/download/$(LIBMB_VERSION)/$(LIBMB_ARC)
+LIBMB_DIR = libmb
+LIBMB_INCLUDE_DIR = $(LIBMB_DIR)
+LIBMB_LIB_DIR = $(LIBMB_DIR)
+LIBMB_LIB = $(LIBMB_LIB_DIR)/libmb.a
+
 # クロスコンパイル環境の設定
 CROSS = m68k-xelf-
 CC = $(CROSS)gcc
@@ -25,14 +33,31 @@ LDLIBS = -lmb
 DEPS = $(patsubst %.o,%.d,$(OBJS))
 
 # ターゲット定義
-.PHONY: all test clean veryclean release bump-version
+.PHONY: all extra-headers test clean veryclean release bump-version
 
 # デフォルトターゲット : 実行ファイルのビルド
-all: $(TARGET)
+all: extra-headers $(TARGET)
 
 # 実行ファイルのリンク
 $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) $^ $(LDLIBS) -o $@
+
+extra-headers: $(LIBMB_INCLUDE_DIR)/mbctype.h $(LIBMB_INCLUDE_DIR)/mbstring.h
+
+$(LIBMB_INCLUDE_DIR)/mbctype.h: | $(LIBMB_LIB)
+$(LIBMB_INCLUDE_DIR)/mbstring.h: | $(LIBMB_LIB)
+
+# libcondrv をダウンロードする
+$(LIBCONDRV_DIR)/$(LIBCONDRV_ARC):
+	wget -q -P $(LIBCONDRV_DIR) $(LIBCONDRV_URL)
+
+# libmb を展開する
+$(LIBMB_LIB): | $(LIBMB_DIR)/$(LIBMB_ARC)
+	7z x -y $(LIBMB_DIR)/$(LIBMB_ARC) -o$(LIBMB_LIB_DIR)
+
+# libmb をダウンロードする
+$(LIBMB_DIR)/$(LIBMB_ARC):
+	wget -q -P $(LIBMB_DIR) $(LIBMB_URL)
 
 # テストプログラム
 TESTTARGET = test/test_match_pattern.x test/test_join_paths.x test/test_arch_x68k.x
@@ -52,6 +77,7 @@ test/%.x: test/%.o arch_x68k.o
 # 中間ファイルの削除
 clean:
 	-rm -f *.x *.o *.elf* *.d
+	-rm -rf $(LIBMB_DIR)/*
 	-rm -f test/*.x test/*.o test/*.elf* test/*.d
 
 # 配布ディレクトリを含めた完全クリーン

@@ -1,5 +1,2 @@
-*.a
-*.tar.gz
-*.c
-!mbsdec.c
-!test/*.c
+*
+!.gitignore

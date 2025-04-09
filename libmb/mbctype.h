@@ -11,6 +11,8 @@
 #ifndef _MBCTYPE_H_
 #define _MBCTYPE_H_
 
+#include <ctype.h>
+
 #define _MALPHA 0x01
 #define _MBLANK 0x02
 #define _MDIGIT 0x04
