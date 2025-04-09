@@ -102,6 +102,20 @@ int main(void) {
     failed_tests++;
   if (!run_test("日本語の不一致", "テスト", "試験", 0, 0, 0)) failed_tests++;
 
+  // 半角英字と全角英字の比較テスト
+  if (!run_test("半角と全角 (完全一致なし)", "hello", "ｈｅｌｌｏ", 0, 0, 0))
+    failed_tests++;
+  if (!run_test("半角と全角 (ワイルドカード)", "h*o", "ｈｅｌｌｏ", 0, 0, 0))
+    failed_tests++;
+  if (!run_test("全角と半角 (完全一致なし)", "ｈｅｌｌｏ", "hello", 0, 0, 0))
+    failed_tests++;
+  if (!run_test("全角のパターンと半角の一部一致", "ｈ*ｏ", "hello", 0, 0, 0))
+    failed_tests++;
+  if (!run_test("混合文字列 (半角パターン)", "he*", "heｌｌｏ", 0, 0, 1))
+    failed_tests++;
+  if (!run_test("混合文字列 (全角パターン)", "ｈｅ*", "ｈｅllo", 0, 0, 1))
+    failed_tests++;
+
   // 大文字小文字を区別しないフラグ (ignore_case = 1, fs_ignore_case = 0)
   if (!run_test("-iname オプション相当", "Hello", "hello", 1, 0, 1))
     failed_tests++;
@@ -127,6 +141,20 @@ int main(void) {
   // ワイルドカード '?' のテスト
   if (!run_test("? 一文字置換", "h?LLo", "hello", 0, 1, 1)) failed_tests++;
   if (!run_test("複数の ?", "H??lO", "hello", 0, 1, 1)) failed_tests++;
+
+  // 半角英字と全角英字の比較テスト
+  if (!run_test("半角と全角 (区別あり)", "hello", "ｈｅｌｌｏ", 0, 1, 0))
+    failed_tests++;
+  if (!run_test("半角と全角 (ignore_case)", "hello", "ｈｅｌｌｏ", 1, 1, 0))
+    failed_tests++;
+  if (!run_test("全角と半角 (区別あり)", "ｈｅｌｌｏ", "hello", 0, 1, 0))
+    failed_tests++;
+  if (!run_test("全角大文字と半角小文字", "ＨＥＬＬＯ", "hello", 0, 1, 0))
+    failed_tests++;
+  if (!run_test("混合文字列 (半角パターン)", "he*", "heｌｌｏ", 0, 1, 1))
+    failed_tests++;
+  if (!run_test("混合文字列 (全角パターン)", "ｈｅ*", "ｈｅllo", 0, 1, 1))
+    failed_tests++;
 
   // 大文字小文字を区別しないフラグ (ignore_case = 1, fs_ignore_case = 1)
   // fs_ignore_case = 1 の場合は ignore_case
