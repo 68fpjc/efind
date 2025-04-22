@@ -181,11 +181,82 @@ static int alloc_formatted_string(char **strp, const char *fmt, ...) {
   return result;
 }
 
+/**
+ * @brief ディレクトリからエントリを収集する
+ *
+ * 指定されたディレクトリからすべてのエントリを読み込み、配列に格納する
+ *
+ * @param[in] dir_path 検索対象のディレクトリパス
+ * @param[out] entries_ptr
+ * 収集されたエントリの配列へのポインタ（関数内で割り当て）
+ * @return 成功時は収集されたエントリ数、失敗時は負の値
+ */
+static int collect_directory_entries(const char *dir_path,
+                                     DirEntry **entries_ptr) {
+  DIR *dir;
+  struct dirent *entry;
+  DirEntry *entries = NULL;
+  int entry_count = 0;
+  int entry_capacity = 0;
+
+  // ディレクトリを開いてエントリを収集
+  if ((dir = opendir(dir_path)) == NULL) {
+    fprintf(stderr, "Cannot open directory '%s': %s\n", dir_path,
+            strerror(errno));
+    return -1;
+  }
+
+  // 収集するエントリ用の初期メモリを確保
+  entry_capacity = 128;  // 初期容量
+  entries = (DirEntry *)malloc(sizeof(DirEntry) * entry_capacity);
+  if (entries == NULL) {
+    fprintf(stderr, "Memory allocation error\n");
+    closedir(dir);
+    return -1;
+  }
+
+  // ディレクトリエントリを読み込む ("." と ".." を除く)
+  while ((entry = readdir(dir)) != NULL) {
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+      continue;
+    }
+
+    // エントリリストの拡張が必要な場合
+    if (entry_count >= entry_capacity) {
+      entry_capacity *= 2;
+      DirEntry *new_entries =
+          (DirEntry *)realloc(entries, sizeof(DirEntry) * entry_capacity);
+      if (new_entries == NULL) {
+        fprintf(stderr, "Memory allocation error during expansion\n");
+        free(entries);
+        closedir(dir);
+        return -1;
+      }
+      entries = new_entries;
+    }
+
+    // エントリ名をコピー
+    strncpy(entries[entry_count].name, entry->d_name,
+            sizeof(entries[entry_count].name) - 1);
+    entries[entry_count].name[sizeof(entries[entry_count].name) - 1] =
+        '\0';  // NULL終端を保証
+
+    entries[entry_count].is_dir = is_directory_entry(entry);
+
+    entry_count++;
+  }
+
+  // ディレクトリハンドルはもう必要ないので閉じる
+  closedir(dir);
+
+  *entries_ptr = entries;
+  return entry_count;
+}
+
 int search_directory(const char *base_dir, const int current_depth,
                      const Options *opts) {
   DirEntry *entries = NULL;
   int entry_count = 0;
-  int entry_capacity = 0;
   int return_status = 0;
   char *base_dir_tmp = NULL;
 
@@ -211,64 +282,12 @@ int search_directory(const char *base_dir, const int current_depth,
     return 0;
   }
 
-  {
-    DIR *dir;
-    struct dirent *entry;
-
-    // ディレクトリを開いてエントリを収集
-    if ((dir = opendir(base_dir_tmp)) == NULL) {
-      fprintf(stderr, "Cannot open directory '%s': %s\n", base_dir,
-              strerror(errno));
-      free(base_dir_tmp);
-      // 最初の呼び出し (current_depth == 0)
-      // でエラーの場合のみエラーコードを返す
-      return (current_depth == 0) ? 1 : 0;
-    }
-
-    // 収集するエントリ用の初期メモリを確保
-    entry_capacity = 32;  // 初期容量
-    entries = (DirEntry *)malloc(sizeof(DirEntry) * entry_capacity);
-    if (entries == NULL) {
-      fprintf(stderr, "Memory allocation error\n");
-      closedir(dir);
-      free(base_dir_tmp);
-      return 1;
-    }
-
-    // ディレクトリエントリを読み込む ("." と ".." を除く)
-    while ((entry = readdir(dir)) != NULL) {
-      if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-        continue;
-      }
-
-      // エントリリストの拡張が必要な場合
-      if (entry_count >= entry_capacity) {
-        entry_capacity *= 2;
-        DirEntry *new_entries =
-            (DirEntry *)realloc(entries, sizeof(DirEntry) * entry_capacity);
-        if (new_entries == NULL) {
-          fprintf(stderr, "Memory allocation error during expansion\n");
-          free(entries);
-          closedir(dir);
-          free(base_dir_tmp);
-          return 1;
-        }
-        entries = new_entries;
-      }
-
-      // エントリ名をコピー
-      strncpy(entries[entry_count].name, entry->d_name,
-              sizeof(entries[entry_count].name) - 1);
-      entries[entry_count].name[sizeof(entries[entry_count].name) - 1] =
-          '\0';  // NULL終端を保証
-
-      entries[entry_count].is_dir = is_directory_entry(entry);
-
-      entry_count++;
-    }
-
-    // ディレクトリハンドルはもう必要ないので閉じる
-    closedir(dir);
+  // ディレクトリからエントリを収集
+  entry_count = collect_directory_entries(base_dir_tmp, &entries);
+  if (entry_count < 0) {
+    free(base_dir_tmp);
+    // 最初の呼び出し (current_depth == 0) でエラーの場合のみエラーコードを返す
+    return (current_depth == 0) ? 1 : 0;
   }
 
   // 収集したエントリを処理
