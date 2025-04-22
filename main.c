@@ -12,7 +12,8 @@ static void print_help(void) {
       "Usage: efind [starting-point...] [expression]\n\n"
       "Options:\n"
       "  -maxdepth LEVELS   Maximum directory depth to search\n"
-      "  -type TYPE         File type to search for (f: file, d: directory)\n"
+      "  -type TYPE         File type to search for (f: file, d: directory, l: "
+      "symbolic link)\n"
       "  -name PATTERN      Search for files matching PATTERN (case "
       "insensitive)\n"
       "  -iname PATTERN     Same as -name, case insensitive\n"
@@ -85,6 +86,9 @@ static int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
             break;
           case 'd':
             cond->type = TYPE_DIR;
+            break;
+          case 'l':
+            cond->type = TYPE_SYMLINK;
             break;
           default:
             fprintf(stderr, "Error: invalid type '%c'\n", type);

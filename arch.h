@@ -19,6 +19,14 @@ int is_filesystem_ignore_case(void);
 int is_directory_entry(struct dirent *entry);
 
 /**
+ * @brief 指定されたファイルがシンボリックリンクかどうかを判定する
+ *
+ * @param[in] filename 判定するファイルの名前
+ * @return シンボリックリンクの場合は非ゼロ値、それ以外は 0
+ */
+int is_symlink_entry(const char *filename);
+
+/**
  * @brief 文字列の末尾がパス区切り文字終わっているかを判定する
  *
  * @param path 判定するパス文字列

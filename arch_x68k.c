@@ -2,6 +2,7 @@
 #include <dirent.h>
 #include <mbstring.h>
 #include <string.h>
+#include <x68k/dos.h>
 
 #include "arch.h"
 
@@ -33,4 +34,8 @@ int is_path_end_with_separator(const char *path) {
 int should_append_dot(const char *path) {
   // path がドライブレターのみの場合は、"." を付加する
   return strlen(path) == 2 && isalpha((unsigned char)path[0]) && path[1] == ':';
+}
+
+int is_symlink_entry(const char *filename) {
+  return _DOS_ISLNK(_dos_chmod(filename, -1));
 }

@@ -20,6 +20,7 @@
 typedef struct {
   char name[256];  // ファイル名 (最大長を確保)
   int is_dir;      // ディレクトリかどうかのフラグ
+  int is_symlink;  // シンボリックリンクかどうかのフラグ
 } DirEntry;
 
 /**
@@ -125,9 +126,12 @@ static int evaluate_conditions(const DirEntry *entry, const Options *opts,
 
     // ファイルタイプのチェック
     if (cond->type != TYPE_NONE) {
-      if (cond->type == TYPE_FILE && entry->is_dir) {
+      if (cond->type == TYPE_FILE && (entry->is_dir || entry->is_symlink)) {
         match = 0;
-      } else if (cond->type == TYPE_DIR && !entry->is_dir) {
+      } else if (cond->type == TYPE_DIR &&
+                 (!entry->is_dir || entry->is_symlink)) {
+        match = 0;
+      } else if (cond->type == TYPE_SYMLINK && !entry->is_symlink) {
         match = 0;
       }
     }
@@ -183,6 +187,29 @@ static int alloc_formatted_string(char **strp, const char *fmt, ...) {
 }
 
 /**
+ * @brief シンボリックリンク検索が必要かどうかを判定する
+ *
+ * Options 構造体を調べ、シンボリックリンクの検索条件が含まれているかを確認する
+ *
+ * @param[in] opts 検索オプション構造体へのポインタ
+ * @return シンボリックリンクの検索が必要な場合は 1、それ以外は 0
+ */
+static int needs_symlink_check(const Options *opts) {
+  if (opts == NULL || opts->condition_count == 0) {
+    return 0;
+  }
+
+  // 各条件を調べ、TYPE_SYMLINK があるか確認
+  for (int i = 0; i < opts->condition_count; i++) {
+    if (opts->conditions[i].type == TYPE_SYMLINK) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+/**
  * @brief ディレクトリからエントリを収集する
  *
  * 指定されたディレクトリからすべてのエントリを読み込み、配列に格納する
@@ -190,15 +217,20 @@ static int alloc_formatted_string(char **strp, const char *fmt, ...) {
  * @param[in] dir_path 検索対象のディレクトリパス
  * @param[out] entries_ptr
  * 収集されたエントリの配列へのポインタ（関数内で割り当て）
+ * @param[in] opts 検索オプション構造体へのポインタ
  * @return 成功時は収集されたエントリ数、失敗時は負の値
  */
 static int collect_directory_entries(const char *dir_path,
-                                     DirEntry **entries_ptr) {
+                                     DirEntry **entries_ptr,
+                                     const Options *opts) {
   DIR *dir;
   struct dirent *entry;
   DirEntry *entries = NULL;
   int entry_count = 0;
   int entry_capacity = 0;
+  char *full_path = NULL;  // 動的に確保するように変更
+  int check_symlinks =
+      needs_symlink_check(opts);  // シンボリックリンクのチェックが必要かどうか
 
   // ディレクトリを開いてエントリを収集
   if ((dir = opendir(dir_path)) == NULL) {
@@ -242,7 +274,30 @@ static int collect_directory_entries(const char *dir_path,
     entries[entry_count].name[sizeof(entries[entry_count].name) - 1] =
         '\0';  // NULL終端を保証
 
+    // 完全パスを構築 (alloc_formatted_string を使用)
+    if (alloc_formatted_string(&full_path, "%s/%s", dir_path, entry->d_name) <
+        0) {
+      // メモリ確保に失敗した場合
+      fprintf(stderr, "Memory allocation error for path\n");
+      free(entries);
+      closedir(dir);
+      return -1;
+    }
+
+    // ディレクトリかどうかの判定
     entries[entry_count].is_dir = is_directory_entry(entry);
+
+    // シンボリックリンクかどうかの判定（-type l が指定された場合のみ）
+    if (check_symlinks) {
+      entries[entry_count].is_symlink = is_symlink_entry(full_path);
+    } else {
+      // -type l が指定されていない場合は、シンボリックリンクチェックをスキップ
+      entries[entry_count].is_symlink = 0;
+    }
+
+    // 不要になったパスを解放
+    free(full_path);
+    full_path = NULL;
 
     entry_count++;
   }
@@ -283,8 +338,8 @@ int search_directory(const char *base_dir, const int current_depth,
     return 0;
   }
 
-  // ディレクトリからエントリを収集
-  entry_count = collect_directory_entries(base_dir_tmp, &entries);
+  // ディレクトリからエントリを収集（opts パラメータを追加）
+  entry_count = collect_directory_entries(base_dir_tmp, &entries, opts);
   if (entry_count < 0) {
     free(base_dir_tmp);
     // 最初の呼び出し (current_depth == 0) でエラーの場合のみエラーコードを返す
