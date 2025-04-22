@@ -20,7 +20,7 @@
 typedef struct {
   char name[256];  // ファイル名 (最大長を確保)
   int is_dir;      // ディレクトリかどうかのフラグ
-  int is_symlink;  // シンボリックリンクかどうかのフラグ
+  int attributes;  // 属性フラグ (FILE_ATTR_* の組み合わせ)
 } DirEntry;
 
 /**
@@ -126,12 +126,17 @@ static int evaluate_conditions(const DirEntry *entry, const Options *opts,
 
     // ファイルタイプのチェック
     if (cond->type != TYPE_NONE) {
-      if (cond->type == TYPE_FILE && (entry->is_dir || entry->is_symlink)) {
+      if (cond->type == TYPE_FILE &&
+          (entry->is_dir || (entry->attributes & FILE_ATTR_SYMLINK))) {
         match = 0;
       } else if (cond->type == TYPE_DIR &&
-                 (!entry->is_dir || entry->is_symlink)) {
+                 (!entry->is_dir || (entry->attributes & FILE_ATTR_SYMLINK))) {
         match = 0;
-      } else if (cond->type == TYPE_SYMLINK && !entry->is_symlink) {
+      } else if (cond->type == TYPE_SYMLINK &&
+                 !(entry->attributes & FILE_ATTR_SYMLINK)) {
+        match = 0;
+      } else if (cond->type == TYPE_EXECUTABLE &&
+                 !(entry->attributes & FILE_ATTR_EXECUTABLE)) {
         match = 0;
       }
     }
@@ -187,21 +192,23 @@ static int alloc_formatted_string(char **strp, const char *fmt, ...) {
 }
 
 /**
- * @brief シンボリックリンク検索が必要かどうかを判定する
+ * @brief ファイル属性チェックが必要かどうかを判定する
  *
- * Options 構造体を調べ、シンボリックリンクの検索条件が含まれているかを確認する
+ * Options 構造体を調べ、シンボリックリンクや実行可能ファイルなど
+ * ファイル属性の検索条件が含まれているかを確認する
  *
  * @param[in] opts 検索オプション構造体へのポインタ
- * @return シンボリックリンクの検索が必要な場合は 1、それ以外は 0
+ * @return ファイル属性の検索が必要な場合は 1、それ以外は 0
  */
-static int needs_symlink_check(const Options *opts) {
+static int needs_file_attribute_check(const Options *opts) {
   if (opts == NULL || opts->condition_count == 0) {
     return 0;
   }
 
-  // 各条件を調べ、TYPE_SYMLINK があるか確認
+  // 各条件を調べ、TYPE_SYMLINK または TYPE_EXECUTABLE があるか確認
   for (int i = 0; i < opts->condition_count; i++) {
-    if (opts->conditions[i].type == TYPE_SYMLINK) {
+    if (opts->conditions[i].type == TYPE_SYMLINK ||
+        opts->conditions[i].type == TYPE_EXECUTABLE) {
       return 1;
     }
   }
@@ -216,7 +223,7 @@ static int needs_symlink_check(const Options *opts) {
  *
  * @param[in] dir_path 検索対象のディレクトリパス
  * @param[out] entries_ptr
- * 収集されたエントリの配列へのポインタ（関数内で割り当て）
+ * 収集されたエントリの配列へのポインタ (関数内で割り当て)
  * @param[in] opts 検索オプション構造体へのポインタ
  * @return 成功時は収集されたエントリ数、失敗時は負の値
  */
@@ -229,8 +236,8 @@ static int collect_directory_entries(const char *dir_path,
   int entry_count = 0;
   int entry_capacity = 0;
   char *full_path = NULL;  // 動的に確保するように変更
-  int check_symlinks =
-      needs_symlink_check(opts);  // シンボリックリンクのチェックが必要かどうか
+  int check_attributes =
+      needs_file_attribute_check(opts);  // ファイル属性のチェックが必要かどうか
 
   // ディレクトリを開いてエントリを収集
   if ((dir = opendir(dir_path)) == NULL) {
@@ -287,12 +294,11 @@ static int collect_directory_entries(const char *dir_path,
     // ディレクトリかどうかの判定
     entries[entry_count].is_dir = is_directory_entry(entry);
 
-    // シンボリックリンクかどうかの判定（-type l が指定された場合のみ）
-    if (check_symlinks) {
-      entries[entry_count].is_symlink = is_symlink_entry(full_path);
+    // 属性情報の取得と設定 (属性チェックが必要な場合のみ)
+    if (check_attributes) {
+      entries[entry_count].attributes = get_file_attributes(full_path);
     } else {
-      // -type l が指定されていない場合は、シンボリックリンクチェックをスキップ
-      entries[entry_count].is_symlink = 0;
+      entries[entry_count].attributes = 0;
     }
 
     // 不要になったパスを解放
@@ -338,7 +344,7 @@ int search_directory(const char *base_dir, const int current_depth,
     return 0;
   }
 
-  // ディレクトリからエントリを収集（opts パラメータを追加）
+  // ディレクトリからエントリを収集 (opts パラメータを追加)
   entry_count = collect_directory_entries(base_dir_tmp, &entries, opts);
   if (entry_count < 0) {
     free(base_dir_tmp);

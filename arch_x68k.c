@@ -21,6 +21,19 @@ int is_filesystem_ignore_case(void) {
 
 int is_directory_entry(struct dirent *entry) { return entry->d_type == DT_DIR; }
 
+int get_file_attributes(const char *path) {
+  int dos_attr;
+  int result = 0;
+  dos_attr = _dos_chmod(path, -1);
+  if (_DOS_ISLNK(dos_attr)) {
+    result |= FILE_ATTR_SYMLINK;
+  }
+  if (dos_attr & _DOS_IEXEC) {
+    result |= FILE_ATTR_EXECUTABLE;
+  }
+  return result;
+}
+
 int is_path_end_with_separator(const char *path) {
   const unsigned char *p = (const unsigned char *)path;
   const unsigned char *p_prev = NULL;
@@ -34,8 +47,4 @@ int is_path_end_with_separator(const char *path) {
 int should_append_dot(const char *path) {
   // path がドライブレターのみの場合は、"." を付加する
   return strlen(path) == 2 && isalpha((unsigned char)path[0]) && path[1] == ':';
-}
-
-int is_symlink_entry(const char *filename) {
-  return _DOS_ISLNK(_dos_chmod(filename, -1));
 }

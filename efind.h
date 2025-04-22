@@ -20,10 +20,11 @@ typedef enum {
  * @enum FileType
  */
 typedef enum {
-  TYPE_NONE,    // ファイルタイプが指定されていない状態
-  TYPE_FILE,    // 通常のファイル
-  TYPE_DIR,     // ディレクトリ
-  TYPE_SYMLINK  // シンボリックリンク
+  TYPE_NONE,       // ファイルタイプが指定されていない状態
+  TYPE_FILE,       // 通常のファイル
+  TYPE_DIR,        // ディレクトリ
+  TYPE_SYMLINK,    // シンボリックリンク
+  TYPE_EXECUTABLE  // 実行可能ファイル
 } FileType;
 
 /**
