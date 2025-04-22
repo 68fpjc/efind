@@ -35,10 +35,11 @@ typedef struct {
  * @return 一致する場合は非ゼロ値、一致しない場合は 0
  */
 static int match_pattern(const char *pattern, const char *string,
-                         int ignore_case, const int fs_ignore_case) {
+                         const int ignore_case, const int fs_ignore_case) {
   // ファイルシステムが大文字小文字を区別しない場合は、常に大文字小文字を区別しない処理を行う
+  int effective_ignore_case = ignore_case;
   if (fs_ignore_case) {
-    ignore_case = 1;
+    effective_ignore_case = 1;
   }
 
   unsigned char *p = (unsigned char *)pattern;
@@ -68,7 +69,7 @@ static int match_pattern(const char *pattern, const char *string,
         p = mbsinc(p);
       } else {
         // 大文字小文字を区別しない場合はアルファベット文字を小文字に変換
-        if (ignore_case && ismbbalpha(p_char) && ismbbalpha(s_char)) {
+        if (effective_ignore_case && ismbbalpha(p_char) && ismbbalpha(s_char)) {
           p_char = tolower(p_char);
           s_char = tolower(s_char);
         }
