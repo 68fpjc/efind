@@ -12,8 +12,6 @@
 
 #include "arch.h"
 
-#define MAX_PATH 256  // パスの最大長
-
 /**
  * @brief ディレクトリエントリを保持する構造体
  *
@@ -109,8 +107,8 @@ static int match_pattern(const char *pattern, const char *string,
  * 1、区別する場合は 0
  * @return 条件を満たす場合は 1 を返し、満たさない場合は 0
  */
-static int evaluate_conditions(const DirEntry *entry, Options *opts,
-                               int fs_ignore_case) {
+static int evaluate_conditions(const DirEntry *entry, const Options *opts,
+                               const int fs_ignore_case) {
   // 条件が指定されていない場合はすべて一致とみなす
   if (opts->condition_count == 0) {
     return 1;  // 条件がない場合はすべて一致
@@ -158,51 +156,40 @@ static int evaluate_conditions(const DirEntry *entry, Options *opts,
 }
 
 /**
- * @brief snprintf 関数のラッパー
+ * @brief asprintf 関数のラッパー
  *
- * バッファが不足する場合でも必ず NULL 終端する
+ * asprintf を呼び出し、エラー時にはメッセージを出力する
  *
- * @param[out] dest 出力先バッファ
- * @param[in] dest_size 出力先バッファのサイズ
- * @param[in] format 書式指定文字列
+ * @param[out] strp  確保された文字列を格納するポインタのアドレス
+ * @param[in] fmt    書式指定文字列
+ * @param[in] ...    可変引数
+ * @return 成功時は文字数、失敗時は負の値
  */
-static void safe_snprintf(char *dest, size_t dest_size, const char *format,
-                          ...) {
-  va_list args;
-  va_start(args, format);
-  int result = vsnprintf(dest, dest_size, format, args);
-  va_end(args);
+static int alloc_formatted_string(char **strp, const char *fmt, ...) {
+  va_list ap;
+  int result;
 
-  if (result >= (int)dest_size && dest_size > 0) {
-    dest[dest_size - 1] = '\0';  // 切り詰めが発生した場合でも終端を保証
+  va_start(ap, fmt);
+  result = vasprintf(strp, fmt, ap);
+  va_end(ap);
+
+  if (result == -1) {
+    fprintf(stderr, "Memory allocation error\n");
+    *strp = NULL;
   }
+
+  return result;
 }
 
-/**
- * @brief 2 つのパスを連結する
- *
- * @param[out] dest      結合結果を格納するバッファ
- * @param[in]  dest_size バッファのサイズ
- * @param[in]  dir       ディレクトリパス
- * @param[in]  file      ファイル名またはサブディレクトリ名
- */
-static void join_paths(char *dest, size_t dest_size, const char *dir,
-                       const char *file) {
-  safe_snprintf(dest, dest_size, "%s%s%s",  //
-                dir, is_path_end_with_separator(dir) ? "" : "/", file);
-}
-
-int search_directory(const char *base_dir, int current_depth, Options *opts) {
-  DIR *dir;
-  struct dirent *entry;
-  char path[MAX_PATH];
+int search_directory(const char *base_dir, const int current_depth,
+                     const Options *opts) {
   DirEntry *entries = NULL;
   int entry_count = 0;
   int entry_capacity = 0;
   int return_status = 0;
-  char base_dir_tmp[MAX_PATH];
+  char *base_dir_tmp = NULL;
 
-  // ファイルシステムの大文字小文字の区別を検索開始時に1回だけチェック
+  // ファイルシステムの大文字小文字の区別を検索開始時に 1 回だけチェック
   static int fs_case_checked = 0;
   static int fs_ignore_case = 0;
 
@@ -211,66 +198,87 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
     fs_case_checked = 1;
   }
 
-  safe_snprintf(base_dir_tmp, sizeof(base_dir_tmp), "%s%s", base_dir,
-                should_append_dot(base_dir) ? "." : "");
-
-  if (opts->maxdepth >= 0 && current_depth > opts->maxdepth - 1) {
-    return 0;
-  }
-
-  // ディレクトリを開いてエントリを収集
-  if ((dir = opendir(base_dir_tmp)) == NULL) {
-    fprintf(stderr, "Cannot open directory '%s': %s\n", base_dir,
-            strerror(errno));
-    // 最初の呼び出し (current_depth == 0) でエラーの場合のみエラーコードを返す
-    return (current_depth == 0) ? 1 : 0;
-  }
-
-  // 収集するエントリ用の初期メモリを確保
-  entry_capacity = 32;  // 初期容量
-  entries = (DirEntry *)malloc(sizeof(DirEntry) * entry_capacity);
-  if (entries == NULL) {
-    fprintf(stderr, "Memory allocation error\n");
-    closedir(dir);
+  if (alloc_formatted_string(       //
+          &base_dir_tmp, "%s%s%s",  //
+          base_dir,                 //
+          should_append_dot(base_dir) ? "." : "",
+          is_path_end_with_separator(base_dir) ? "" : "/") < 0) {
     return 1;
   }
 
-  // ディレクトリエントリを読み込む ("." と ".." を除く)
-  while ((entry = readdir(dir)) != NULL) {
-    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-      continue;
-    }
-
-    // エントリリストの拡張が必要な場合
-    if (entry_count >= entry_capacity) {
-      entry_capacity *= 2;
-      DirEntry *new_entries =
-          (DirEntry *)realloc(entries, sizeof(DirEntry) * entry_capacity);
-      if (new_entries == NULL) {
-        fprintf(stderr, "Memory allocation error during expansion\n");
-        free(entries);
-        closedir(dir);
-        return 1;
-      }
-      entries = new_entries;
-    }
-
-    // エントリ名をコピー (snprintf を安全な関数に置き換え)
-    safe_snprintf(entries[entry_count].name, sizeof(entries[entry_count].name),
-                  "%s", entry->d_name);
-
-    entries[entry_count].is_dir = is_directory_entry(entry);
-
-    entry_count++;
+  if (opts->maxdepth >= 0 && current_depth > opts->maxdepth - 1) {
+    free(base_dir_tmp);
+    return 0;
   }
 
-  // ディレクトリハンドルはもう必要ないので閉じる
-  closedir(dir);
+  {
+    DIR *dir;
+    struct dirent *entry;
+
+    // ディレクトリを開いてエントリを収集
+    if ((dir = opendir(base_dir_tmp)) == NULL) {
+      fprintf(stderr, "Cannot open directory '%s': %s\n", base_dir,
+              strerror(errno));
+      free(base_dir_tmp);
+      // 最初の呼び出し (current_depth == 0)
+      // でエラーの場合のみエラーコードを返す
+      return (current_depth == 0) ? 1 : 0;
+    }
+
+    // 収集するエントリ用の初期メモリを確保
+    entry_capacity = 32;  // 初期容量
+    entries = (DirEntry *)malloc(sizeof(DirEntry) * entry_capacity);
+    if (entries == NULL) {
+      fprintf(stderr, "Memory allocation error\n");
+      closedir(dir);
+      free(base_dir_tmp);
+      return 1;
+    }
+
+    // ディレクトリエントリを読み込む ("." と ".." を除く)
+    while ((entry = readdir(dir)) != NULL) {
+      if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+        continue;
+      }
+
+      // エントリリストの拡張が必要な場合
+      if (entry_count >= entry_capacity) {
+        entry_capacity *= 2;
+        DirEntry *new_entries =
+            (DirEntry *)realloc(entries, sizeof(DirEntry) * entry_capacity);
+        if (new_entries == NULL) {
+          fprintf(stderr, "Memory allocation error during expansion\n");
+          free(entries);
+          closedir(dir);
+          free(base_dir_tmp);
+          return 1;
+        }
+        entries = new_entries;
+      }
+
+      // エントリ名をコピー
+      strncpy(entries[entry_count].name, entry->d_name,
+              sizeof(entries[entry_count].name) - 1);
+      entries[entry_count].name[sizeof(entries[entry_count].name) - 1] =
+          '\0';  // NULL終端を保証
+
+      entries[entry_count].is_dir = is_directory_entry(entry);
+
+      entry_count++;
+    }
+
+    // ディレクトリハンドルはもう必要ないので閉じる
+    closedir(dir);
+  }
 
   // 収集したエントリを処理
   for (int i = 0; i < entry_count; i++) {
+    char *path = NULL;
     // パスを結合
-    join_paths(path, sizeof(path), base_dir_tmp, entries[i].name);
+    if (alloc_formatted_string(&path, "%s%s", base_dir_tmp, entries[i].name) <
+        0) {
+      continue;
+    }
 
     // 条件を評価して、マッチすれば出力
     if (evaluate_conditions(&entries[i], opts, fs_ignore_case)) {
@@ -281,10 +289,12 @@ int search_directory(const char *base_dir, int current_depth, Options *opts) {
     if (entries[i].is_dir) {
       search_directory(path, current_depth + 1, opts);
     }
+
+    free(path);
   }
 
-  // メモリを解放
   free(entries);
+  free(base_dir_tmp);
 
   return return_status;
 }

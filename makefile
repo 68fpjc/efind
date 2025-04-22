@@ -21,7 +21,7 @@ AS = $(CROSS)as
 LD = $(CROSS)gcc
 
 # コンパイルオプション
-CFLAGS_COMMON = -m68000 -Wall -MMD -Ilibmb -DPROGRAM=\"$(PROGRAM)\" -DVERSION=\"$(VERSION)\"
+CFLAGS_COMMON = -m68000 -Wall -MMD -Ilibmb -D_GNU_SOURCE -DPROGRAM=\"$(PROGRAM)\" -DVERSION=\"$(VERSION)\"
 ifdef RELEASE_BUILD
   CFLAGS = $(CFLAGS_COMMON) -O3  # リリースビルド
 else
@@ -60,7 +60,7 @@ $(LIBMB_DIR)/$(LIBMB_ARC):
 	wget -q -P $(LIBMB_DIR) $(LIBMB_URL)
 
 # テストプログラム
-TESTTARGET = test/test_match_pattern.x test/test_join_paths.x test/test_arch_x68k.x
+TESTTARGET = test/test_match_pattern.x test/test_arch_x68k.x
 TESTDEPS = $(patsubst %.x,%.d,$(TESTTARGET))
 
 # テストプログラムのビルド

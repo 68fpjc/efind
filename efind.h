@@ -58,6 +58,7 @@ typedef struct {
  * @param[in] opts 検索オプションを含む構造体へのポインタ
  * @return int 成功時は 0、エラー時は 1
  */
-int search_directory(const char *base_dir, int current_depth, Options *opts);
+int search_directory(const char *base_dir, int current_depth,
+                     const Options *opts);
 
 #endif /* EFIND_H */
