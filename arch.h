@@ -25,6 +25,16 @@ int is_filesystem_ignore_case(void);
 int is_directory_entry(struct dirent *entry);
 
 /**
+ * @brief 指定されたパスが通常ファイルかどうかを判定する
+ *
+ * エントリが存在し、かつ通常ファイルである場合に真を返す
+ *
+ * @param[in] path 判定するパス
+ * @return 存在する通常ファイルの場合は非ゼロ値、それ以外は 0
+ */
+int is_existing_regular_file(const char *path);
+
+/**
  * @brief ファイルの属性を取得する
  *
  * ファイルの複数の属性を取得し、ビットフラグで返す

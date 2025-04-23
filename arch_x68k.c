@@ -2,6 +2,7 @@
 #include <dirent.h>
 #include <mbstring.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <x68k/dos.h>
 
 #include "arch.h"
@@ -20,6 +21,14 @@ int is_filesystem_ignore_case(void) {
 }
 
 int is_directory_entry(struct dirent *entry) { return entry->d_type == DT_DIR; }
+
+int is_existing_regular_file(const char *path) {
+  struct stat st;
+  if (stat(path, &st) != 0) {
+    return 0;
+  }
+  return S_ISREG(st.st_mode);
+}
 
 int get_file_attributes(const char *path) {
   int dos_attr;

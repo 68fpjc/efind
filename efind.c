@@ -322,6 +322,12 @@ int search_directory(const char *base_dir, const int current_depth,
   int return_status = 0;
   char *base_dir_tmp = NULL;
 
+  // パスが存在する通常ファイルの場合は単に表示して終了
+  if (is_existing_regular_file(base_dir)) {
+    printf("%s\n", base_dir);
+    return 0;
+  }
+
   // ファイルシステムの大文字小文字の区別を検索開始時に 1 回だけチェック
   static int fs_case_checked = 0;
   static int fs_ignore_case = 0;
