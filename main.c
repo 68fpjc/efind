@@ -31,25 +31,104 @@ static void print_version(void) {
 }
 
 /**
+ * @brief 検索パスのリストを保持する構造体
+ */
+typedef struct {
+  char **paths;  // パスの配列
+  int count;     // パスの数
+  int capacity;  // 配列の容量
+} PathList;
+
+/**
+ * @brief パスリストを初期化する関数
+ *
+ * @param[out] list 初期化するパスリスト
+ * @return 成功時は 1、失敗時は 0
+ */
+static int initialize_path_list(PathList *list) {
+  list->capacity = 8;  // 初期容量
+  list->count = 0;
+  list->paths = (char **)malloc(sizeof(char *) * list->capacity);
+
+  if (list->paths == NULL) {
+    fprintf(stderr, "Memory allocation error\n");
+    return 0;
+  }
+
+  return 1;
+}
+
+/**
+ * @brief パスリストにパスを追加する関数
+ *
+ * @param[in,out] list パスを追加するリスト
+ * @param[in] path 追加するパス
+ * @return 成功時は 1、失敗時は 0
+ */
+static int add_path(PathList *list, const char *path) {
+  // 容量が不足している場合は拡張
+  if (list->count >= list->capacity) {
+    list->capacity *= 2;
+    char **new_paths =
+        (char **)realloc(list->paths, sizeof(char *) * list->capacity);
+
+    if (new_paths == NULL) {
+      fprintf(stderr, "Memory allocation error\n");
+      return 0;
+    }
+
+    list->paths = new_paths;
+  }
+
+  // パスを追加
+  list->paths[list->count++] = strdup(path);
+
+  if (list->paths[list->count - 1] == NULL) {
+    fprintf(stderr, "Memory allocation error\n");
+    return 0;
+  }
+
+  return 1;
+}
+
+/**
+ * @brief パスリストを解放する関数
+ *
+ * @param[in,out] list 解放するパスリスト
+ */
+static void free_path_list(PathList *list) {
+  if (list->paths) {
+    for (int i = 0; i < list->count; i++) {
+      free(list->paths[i]);
+    }
+    free(list->paths);
+  }
+  list->paths = NULL;
+  list->count = list->capacity = 0;
+}
+
+/**
  * @brief コマンドライン引数を解析する関数
  *
  * @param[in] argc コマンドライン引数の数
  * @param[in] argv コマンドライン引数の配列
  * @param[out] opts 解析結果を格納するためのオプション構造体へのポインタ
- * @param[out] start_dir 開始ディレクトリを格納するためのポインタ
+ * @param[out] paths 検索パスのリストへのポインタ
  * @return 成功時は 1 、エラー時は 0 を返す
  */
-static int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
+static int parse_args(int argc, char *argv[], Options *opts, PathList *paths) {
   // デフォルト値の設定
   opts->maxdepth =
       -1;  // 最大深さのデフォルト値を設定 (-1 は制限なしを意味する)
   opts->condition_count = 0;  // 条件の数を初期化
-  *start_dir = ".";           // 開始ディレクトリのデフォルト値を設定
 
-  // コマンドライン引数がない場合はデフォルト設定で実行する
+  // コマンドライン引数がない場合はカレントディレクトリを検索パスに設定
   if (argc < 2) {
+    add_path(paths, ".");
     return 1;  // 引数なしでも成功として扱う
   }
+
+  int found_search_path = 0;  // 検索パスが見つかったかどうかのフラグ
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-help") == 0) {
@@ -131,8 +210,17 @@ static int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
         return 0;
       }
     } else if (argv[i][0] != '-') {
-      *start_dir = argv[i];  // 開始ディレクトリと仮定する
+      // オプションでない引数は検索パスとして扱う
+      if (!add_path(paths, argv[i])) {
+        return 0;
+      }
+      found_search_path = 1;
     }
+  }
+
+  // 検索パスが見つからなかった場合はカレントディレクトリを設定
+  if (!found_search_path) {
+    add_path(paths, ".");
   }
 
   return 1;
@@ -147,11 +235,29 @@ static int parse_args(int argc, char *argv[], Options *opts, char **start_dir) {
  */
 int main(int argc, char *argv[]) {
   Options opts;
-  char *start_dir;
+  PathList paths;
+  int status = 0;
 
-  if (!parse_args(argc, argv, &opts, &start_dir)) {
+  // パスリストを初期化
+  if (!initialize_path_list(&paths)) {
     return 1;
   }
 
-  return search_directory(start_dir, 0, &opts);
+  if (!parse_args(argc, argv, &opts, &paths)) {
+    free_path_list(&paths);
+    return 1;
+  }
+
+  // 複数の検索パスを処理
+  for (int i = 0; i < paths.count; i++) {
+    int result = search_directory(paths.paths[i], 0, &opts);
+    if (result != 0) {
+      status = result;
+    }
+  }
+
+  // パスリストを解放
+  free_path_list(&paths);
+
+  return status;
 }
