@@ -322,12 +322,6 @@ int search_directory(const char *base_dir, const int current_depth,
   int return_status = 0;
   char *base_dir_tmp = NULL;
 
-  // パスが存在する通常ファイルの場合は単に表示して終了
-  if (is_existing_regular_file(base_dir)) {
-    printf("%s\n", base_dir);
-    return 0;
-  }
-
   // ファイルシステムの大文字小文字の区別を検索開始時に 1 回だけチェック
   static int fs_case_checked = 0;
   static int fs_ignore_case = 0;
@@ -335,6 +329,42 @@ int search_directory(const char *base_dir, const int current_depth,
   if (!fs_case_checked) {
     fs_ignore_case = is_filesystem_ignore_case();
     fs_case_checked = 1;
+  }
+
+  // パスが存在する通常ファイルの場合は条件に合致するか確認して表示
+  if (is_existing_regular_file(base_dir)) {
+    // 通常ファイル用の DirEntry を作成
+    DirEntry file_entry;
+    char *file_name = strrchr(base_dir, '/');
+
+    if (file_name == NULL) {
+      file_name = strrchr(base_dir, '\\');
+    }
+
+    // ファイル名部分を取得 (パス区切り文字がない場合はパス全体がファイル名)
+    if (file_name == NULL) {
+      file_name = (char *)base_dir;
+    } else {
+      file_name++;  // パス区切り文字をスキップ
+    }
+
+    // ファイルエントリ情報を設定
+    strncpy(file_entry.name, file_name, sizeof(file_entry.name) - 1);
+    file_entry.name[sizeof(file_entry.name) - 1] = '\0';  // NULL 終端を保証
+    file_entry.is_dir = 0;                                // 通常ファイル
+
+    // ファイル属性のチェックが必要な場合のみ属性を取得
+    if (needs_file_attribute_check(opts)) {
+      file_entry.attributes = get_file_attributes(base_dir);
+    } else {
+      file_entry.attributes = 0;
+    }
+
+    // 条件に合致するか評価して表示
+    if (evaluate_conditions(&file_entry, opts, fs_ignore_case)) {
+      printf("%s\n", base_dir);
+    }
+    return 0;
   }
 
   if (alloc_formatted_string(       //
